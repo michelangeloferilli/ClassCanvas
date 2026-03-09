@@ -50,7 +50,7 @@
       const calculate = useCallback(() => {
         if (containerRef.current) {
           const availW = containerRef.current.clientWidth - GRID_PADDING * 2;
-          const availH = window.innerHeight - 180;
+          const availH = window.innerHeight - 220;
           const maxByW = Math.floor((availW - GAP * (GRID_COLS - 1)) / GRID_COLS);
           const maxByH = Math.floor((availH - GAP * (GRID_ROWS - 1)) / GRID_ROWS);
           setDims({
@@ -101,7 +101,7 @@
     function useDriveSync() {
       async function chiamaScript(params) {
         const url = SCRIPT_URL + "?" + new URLSearchParams(params).toString();
-        const res = await fetch(url, { redirect: "follow", credentials: "include" });
+        const res = await fetch(url, { redirect: "follow" });
         if (!res.ok) throw new Error(`Errore HTTP: ${res.status}`);
         const json = await res.json();
         if (json.errore) throw new Error(json.errore);
