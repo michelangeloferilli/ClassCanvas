@@ -22,9 +22,6 @@
   <script type="text/babel">
     const { useState, useMemo, useRef, useEffect, useCallback } = React;
 
-    // ============================================================
-    // CONFIGURAZIONE GLOBALE
-    // ============================================================
     const MAX_STUDENTI = 30;
     const ANNO_CORRENTE = new Date().getFullYear();
     const ANNI_SCOLASTICI = Array.from({ length: 3 }, (_, i) => {
@@ -37,7 +34,6 @@
     const GRID_COLS = 11;
     const GRID_ROWS = 9;
     const GAP = 2;
-    const PANEL_WIDTH = 250;
     const GRID_PADDING = 12;
 
     function useCellDimensions(containerRef) {
@@ -75,9 +71,6 @@
     };
     const PANEL_STYLE = { background: "#1e293b", border: "1px solid #334155" };
 
-    // ============================================================
-    // UTILITIES
-    // ============================================================
     function calcolaDimensioneTesto(testo, cellW, cellH, baseRatio, isBold) {
       if (!testo) return 10;
       const maxFontSize = Math.min(cellW * baseRatio, cellH * 0.35);
@@ -124,13 +117,10 @@
       return (
         <div style={{ position: "fixed", inset: 0, zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center" }}
           onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
-          {/* Backdrop */}
           <div style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,0.7)", backdropFilter: "blur(4px)" }} />
-          {/* Modal */}
           <div style={{ position: "relative", width: "90%", maxWidth: "820px", maxHeight: "90vh", background: "#1e293b",
             borderRadius: "16px", border: "1px solid #334155", boxShadow: "0 25px 60px rgba(0,0,0,0.5)",
             display: "flex", flexDirection: "column", overflow: "hidden" }}>
-            {/* Header modale */}
             <div style={{ padding: "16px 20px", display: "flex", alignItems: "center", justifyContent: "space-between",
               borderBottom: "1px solid #334155", flexShrink: 0 }}>
               <h2 style={{ fontSize: "18px", fontWeight: 700, color: "#fff" }}>📖 Guida all'uso</h2>
@@ -138,35 +128,19 @@
                 width: "32px", height: "32px", display: "flex", alignItems: "center", justifyContent: "center",
                 color: "#94a3b8", fontSize: "16px", cursor: "pointer" }}>✕</button>
             </div>
-            {/* Contenuto scrollabile */}
             <div style={{ flex: 1, overflowY: "auto", padding: "24px" }}>
-
-              {/* Intro */}
               <div style={sectionStyle}>
                 <h2 style={h2Style}>👋 Benvenuto in Piantina Classe</h2>
-                <p style={pStyle}>
-                  Questa applicazione ti permette di creare la piantina della tua classe, assegnare gli alunni ai banchi e stampare il risultato in PDF. Funziona interamente nel browser, non serve installare nulla e i dati restano nel tuo computer.
-                </p>
+                <p style={pStyle}>Questa applicazione ti permette di creare la piantina della tua classe, assegnare gli alunni ai banchi e stampare il risultato in PDF. Funziona interamente nel browser, non serve installare nulla e i dati restano nel tuo computer.</p>
               </div>
-
-              {/* Fase 1 */}
               <div style={sectionStyle}>
                 <h2 style={h2Style}>📋 Fase 1 — Configura la classe</h2>
-                <p style={pStyle}>
-                  Nella schermata iniziale inserisci i dati della classe: anno scolastico, classe, sezione, indirizzo di studio e numero di alunni (massimo 30). Questi dati appariranno anche nell'intestazione del PDF.
-                </p>
-                <p style={pStyle}>
-                  Clicca <strong style={{ color: "#f59e0b" }}>"Continua → Posiziona i banchi"</strong> per procedere.
-                </p>
+                <p style={pStyle}>Nella schermata iniziale inserisci i dati della classe: anno scolastico, classe, sezione, indirizzo di studio e numero di alunni (massimo 30). Questi dati appariranno anche nell'intestazione del PDF.</p>
+                <p style={pStyle}>Clicca <strong style={{ color: "#f59e0b" }}>"Continua → Posiziona i banchi"</strong> per procedere.</p>
               </div>
-
-              {/* Fase 2 */}
               <div style={sectionStyle}>
                 <h2 style={h2Style}>📐 Fase 2 — Posiziona i banchi</h2>
-                <p style={pStyle}>
-                  In questa schermata vedrai una griglia che rappresenta l'aula. Sulla sinistra trovi due pannelli:
-                </p>
-
+                <p style={pStyle}>In questa schermata vedrai una griglia che rappresenta l'aula. Sulla sinistra trovi due pannelli:</p>
                 <h3 style={h3Style}>⚡ Pannello Azioni</h3>
                 <p style={pStyle}>Tre modalità di lavoro:</p>
                 <div style={{ paddingLeft: "16px" }}>
@@ -174,110 +148,41 @@
                   <p style={liStyle}><strong style={{ color: "#2dd4bf" }}>✋ Sposta</strong> — Clicca su un banco già posizionato e trascinalo nella nuova posizione.</p>
                   <p style={liStyle}><strong style={{ color: "#f87171" }}>🗑 Cancella</strong> — Clicca su un banco per rimuoverlo dalla griglia.</p>
                 </div>
-
                 <h3 style={h3Style}>🧰 Pannello Elemento</h3>
-                <p style={pStyle}>
-                  Scegli cosa posizionare: la <strong style={{ color: "#a78bfa" }}>Cattedra</strong> (una sola, occupa 3 celle) oppure i <strong style={{ color: "#38bdf8" }}>banchi</strong> (singolo = 1 posto, doppio = 2, triplo = 3). I banchi si disabilitano automaticamente quando non ci sono più posti disponibili.
-                </p>
-
+                <p style={pStyle}>Scegli cosa posizionare: la <strong style={{ color: "#a78bfa" }}>Cattedra</strong> oppure i <strong style={{ color: "#38bdf8" }}>banchi</strong> (singolo, doppio o triplo).</p>
                 <div style={tipStyle}>
-                  <p style={tipText}>
-                    💡 <strong>Trucco veloce:</strong> In modalità Aggiungi, se clicchi su un banco già posizionato dello <em>stesso tipo</em> lo rimuovi; se clicchi con un tipo <em>diverso</em> selezionato, lo sostituisci.
-                  </p>
+                  <p style={tipText}>💡 <strong>Trucco veloce:</strong> In modalità Aggiungi, se clicchi su un banco già posizionato dello stesso tipo lo rimuovi; se clicchi con un tipo diverso selezionato, lo sostituisci.</p>
                 </div>
-
-                <p style={pStyle}>
-                  Il contatore in alto a destra mostra i posti posizionati rispetto al numero di alunni. Quando hai posizionato abbastanza posti e la cattedra, apparirà il pulsante per continuare.
-                </p>
               </div>
-
-              {/* Fase 3 */}
               <div style={sectionStyle}>
                 <h2 style={h2Style}>👥 Fase 3 — Assegna gli alunni</h2>
-                <p style={pStyle}>
-                  In questa schermata vedi la piantina al centro e sulla sinistra i pannelli per gestire gli alunni.
-                </p>
-
                 <h3 style={h3Style}>✏️ Inserimento alunni</h3>
-                <p style={pStyle}>
-                  Puoi aggiungere gli alunni in due modi:
-                </p>
                 <div style={{ paddingLeft: "16px" }}>
-                  <p style={liStyle}><strong>Manualmente:</strong> scrivi cognome e nome, poi clicca "Aggiungi" o premi <span style={kbdStyle}>Invio</span>. I nomi vengono formattati automaticamente.</p>
-                  <p style={liStyle}><strong>Da file:</strong> clicca "📄 Scegli file" e importa un file CSV o Excel (.xlsx). Il file deve avere le colonne Cognome e Nome (l'header viene riconosciuto automaticamente).</p>
+                  <p style={liStyle}><strong>Manualmente:</strong> scrivi cognome e nome, poi clicca "Aggiungi" o premi <span style={kbdStyle}>Invio</span>.</p>
+                  <p style={liStyle}><strong>Da file:</strong> clicca "📄 Scegli file" e importa CSV o Excel. Il file deve avere le colonne Cognome e Nome.</p>
                 </div>
-
                 <h3 style={h3Style}>🎲 Assegnazione ai banchi</h3>
-                <p style={pStyle}>Hai diverse opzioni per assegnare gli alunni:</p>
                 <div style={{ paddingLeft: "16px" }}>
-                  <p style={liStyle}><strong>Trascinamento:</strong> trascina un alunno dalla lista "Non assegnati" e rilascialo su un banco vuoto (si illumina quando ci passi sopra).</p>
-                  <p style={liStyle}><strong style={{ color: "#2dd4bf" }}>🎲 Assegna non assegnati:</strong> posiziona casualmente tutti gli alunni ancora in lista nei posti liberi.</p>
-                  <p style={liStyle}><strong style={{ color: "#a78bfa" }}>🔀 Mescola sbloccati:</strong> scambia casualmente le posizioni degli alunni già assegnati che non sono bloccati.</p>
+                  <p style={liStyle}><strong>Trascinamento:</strong> trascina un alunno dalla lista "Non assegnati" e rilascialo su un banco vuoto.</p>
+                  <p style={liStyle}><strong style={{ color: "#2dd4bf" }}>🎲 Assegna non assegnati:</strong> posiziona casualmente tutti gli alunni liberi.</p>
+                  <p style={liStyle}><strong style={{ color: "#a78bfa" }}>🔀 Mescola sbloccati:</strong> scambia casualmente le posizioni degli alunni non bloccati.</p>
                 </div>
-
-                <h3 style={h3Style}>Gestire i banchi assegnati</h3>
-                <p style={pStyle}>
-                  Su ogni banco con un alunno assegnato appaiono due pulsantini:
-                </p>
-                <div style={{ paddingLeft: "16px" }}>
-                  <p style={liStyle}><span style={{ background: "rgba(239,68,68,0.8)", color: "#fff", padding: "1px 6px", borderRadius: "4px", fontSize: "12px" }}>✕</span> in alto a sinistra — rimuove l'alunno dal banco e lo rimette nella lista.</p>
-                  <p style={liStyle}><span style={{ background: "rgba(100,116,139,0.5)", color: "#fff", padding: "1px 6px", borderRadius: "4px", fontSize: "12px" }}>🔓</span> / <span style={{ background: "rgba(251,191,36,0.9)", color: "#fff", padding: "1px 6px", borderRadius: "4px", fontSize: "12px" }}>🔒</span> in alto a destra — blocca/sblocca la posizione. Un alunno bloccato non viene spostato dalla randomizzazione.</p>
-                </div>
-
                 <div style={tipStyle}>
-                  <p style={tipText}>
-                    💡 <strong>Strategia consigliata:</strong> Usa "Assegna non assegnati" per il primo posizionamento. Poi blocca gli alunni che ti convincono e usa "Mescola sbloccati" per rimescolare solo gli altri, finché la disposizione ti soddisfa.
-                  </p>
+                  <p style={tipText}>💡 <strong>Strategia consigliata:</strong> Usa "Assegna non assegnati" per il primo posizionamento. Poi blocca gli alunni che ti convincono e usa "Mescola sbloccati" per rimescolare solo gli altri.</p>
                 </div>
               </div>
-
-              {/* PDF */}
               <div style={sectionStyle}>
                 <h2 style={h2Style}>📄 Esportazione PDF</h2>
-                <p style={pStyle}>
-                  Quando almeno un alunno è assegnato, in fondo alla colonna sinistra appare il pulsante <strong style={{ color: "#f59e0b" }}>"📄 Scarica PDF"</strong>. Il PDF viene generato in formato A4 orizzontale con:
-                </p>
-                <div style={{ paddingLeft: "16px" }}>
-                  <p style={liStyle}>Intestazione con classe, sezione, indirizzo e anno scolastico</p>
-                  <p style={liStyle}>Piantina con cattedra e banchi con i nomi degli alunni</p>
-                  <p style={liStyle}>Data di generazione nel footer</p>
-                </div>
-                <p style={pStyle}>
-                  Il PDF è pronto per essere stampato su foglio A4 orizzontale. Le icone di blocco e i pulsanti non appaiono nel PDF.
-                </p>
+                <p style={pStyle}>Quando almeno un alunno è assegnato appare il pulsante <strong style={{ color: "#f59e0b" }}>"📄 Scarica PDF"</strong>. Il PDF viene generato in formato A4 orizzontale.</p>
               </div>
-
-              {/* File import */}
-              <div style={sectionStyle}>
-                <h2 style={h2Style}>📂 Formato file per l'importazione</h2>
-                <p style={pStyle}>
-                  L'applicazione accetta file <strong>CSV</strong>, <strong>TXT</strong>, <strong>XLS</strong> e <strong>XLSX</strong>. Il file deve contenere i dati degli alunni con questa struttura:
-                </p>
-                <div style={{ background: "#0f172a", borderRadius: "8px", padding: "16px", marginTop: "8px", fontFamily: "monospace", fontSize: "13px", color: "#94a3b8", lineHeight: 1.8, overflowX: "auto" }}>
-                  <div style={{ color: "#64748b" }}>// Formato consigliato (con header):</div>
-                  <div><span style={{ color: "#f59e0b" }}>Cognome</span>,<span style={{ color: "#38bdf8" }}>Nome</span></div>
-                  <div>Rossi,Mario</div>
-                  <div>Bianchi,Giulia</div>
-                  <div>Verdi,Luca</div>
-                  <div style={{ marginTop: "12px", color: "#64748b" }}>// Funziona anche senza header</div>
-                  <div style={{ color: "#64748b" }}>// e con una sola colonna (cognome)</div>
-                </div>
-                <p style={{ ...pStyle, marginTop: "8px" }}>
-                  L'header viene riconosciuto automaticamente. Se la prima colonna si chiama "Nome" o "Name", l'ordine delle colonne viene invertito. I duplicati e i nomi oltre il limite vengono saltati automaticamente.
-                </p>
-              </div>
-
-              {/* Note */}
               <div style={sectionStyle}>
                 <h2 style={h2Style}>ℹ️ Note importanti</h2>
                 <div style={{ paddingLeft: "16px" }}>
                   <p style={liStyle}>I dati restano nel tuo browser e non vengono inviati a nessun server.</p>
                   <p style={liStyle}>Se ricarichi la pagina, i dati vengono persi. Ricorda di esportare il PDF prima di chiudere.</p>
                   <p style={liStyle}>L'applicazione funziona su qualsiasi browser moderno (Chrome, Firefox, Edge, Safari).</p>
-                  <p style={liStyle}>Per risultati ottimali, usa un computer con schermo di almeno 13 pollici.</p>
                 </div>
               </div>
-
               <div style={{ borderTop: "1px solid #334155", paddingTop: "16px", textAlign: "center" }}>
                 <button onClick={onClose} style={{ padding: "10px 28px", borderRadius: "12px", fontWeight: 600, fontSize: "14px",
                   background: "linear-gradient(135deg, #f59e0b, #d97706)", color: "#fff", border: "none", cursor: "pointer",
@@ -298,17 +203,13 @@
     function SetupClasse({ onComplete, onGuida }) {
       const [formData, setFormData] = useState({ annoScolastico: ANNI_SCOLASTICI[1], classe: "1", sezione: "A", indirizzo: "", numAlunni: 20 });
       const [errors, setErrors] = useState({});
-      
       const handleChange = (field, value) => { setFormData((p) => ({ ...p, [field]: value })); if (errors[field]) setErrors((p) => ({ ...p, [field]: null })); };
-      
       const validate = () => {
         const e = {}; if (!formData.indirizzo.trim()) e.indirizzo = "Inserisci l'indirizzo";
         if (formData.numAlunni < 1 || formData.numAlunni > MAX_STUDENTI) e.numAlunni = `Tra 1 e ${MAX_STUDENTI}`;
         setErrors(e); return Object.keys(e).length === 0;
       };
-      
       const handleSubmit = () => { if (validate()) onComplete(formData); };
-      
       const iStyle = (err) => ({ width: "100%", padding: "10px 12px", borderRadius: "8px", fontSize: "14px", color: "#1e293b", background: "#f8fafc", border: `1.5px solid ${err ? "#ef4444" : "#cbd5e1"}`, outline: "none" });
 
       return (
@@ -367,8 +268,6 @@
                 Continua → Posiziona i banchi
               </button>
             </div>
-
-            {/* Pulsante Guida */}
             <div style={{ textAlign: "center", marginTop: "20px" }}>
               <button onClick={onGuida} style={{ background: "none", border: "1px solid #475569", borderRadius: "10px",
                 padding: "8px 20px", color: "#94a3b8", fontSize: "13px", cursor: "pointer", display: "inline-flex", alignItems: "center", gap: "6px" }}>
@@ -381,14 +280,19 @@
     }
 
     // ============================================================
-    // EditorPiantina (invariato dal codice dell'utente)
+    // EditorPiantina — accetta initialDesks per non perdere i banchi
     // ============================================================
-    function EditorPiantina({ datiClasse, onBack, onComplete }) {
-      const [desks, setDesks] = useState([]);
+    function EditorPiantina({ datiClasse, onBack, onComplete, initialDesks }) {
+      const [desks, setDesks] = useState(initialDesks || []);
       const [mode, setMode] = useState("aggiungi");
       const [selectedElement, setSelectedElement] = useState("cattedra");
       const [hoveredCell, setHoveredCell] = useState(null);
-      const [nextId, setNextId] = useState(1);
+      const [nextId, setNextId] = useState(() => {
+        if (initialDesks && initialDesks.length > 0) {
+          return Math.max(...initialDesks.map(d => d.id)) + 1;
+        }
+        return 1;
+      });
       const [dragging, setDragging] = useState(null);
       const gridRef = useRef(null);
       const gridContainerRef = useRef(null);
@@ -486,16 +390,25 @@
     }
 
     // ============================================================
-    // AssegnaPosti (invariato dal codice dell'utente)
+    // AssegnaPosti — accetta initialAlunni/Assegnazioni e notifica il parent
     // ============================================================
-    function AssegnaPosti({ datiClasse, desks, onBack }) {
-      const [alunni, setAlunni] = useState([]); const [assegnazioni, setAssegnazioni] = useState({});
+    function AssegnaPosti({ datiClasse, desks, onBack, initialAlunni, initialAssegnazioni, onAlunniChange, onAssegnazioniChange }) {
+      const [alunni, setAlunni] = useState(initialAlunni || []);
+      const [assegnazioni, setAssegnazioni] = useState(initialAssegnazioni || {});
       const [nome, setNome] = useState(""); const [cognome, setCognome] = useState(""); const [error, setError] = useState(""); const [importMsg, setImportMsg] = useState("");
       const fileInputRef = useRef(null); const [draggingAlunno, setDraggingAlunno] = useState(null);
       const gridContainerRef = useRef(null);
       const { w: cellW, h: cellH } = useCellDimensions(gridContainerRef);
       const [exporting, setExporting] = useState(false);
       const formattaTesto = (str) => { if (!str) return ""; return str.trim().toLowerCase().replace(/(?:^|[\s'])([a-zàèéìòù])/g, match => match.toUpperCase()); };
+
+      // Helper per aggiornare alunni e notificare il parent
+      const aggiornaAlunni = (fn) => {
+        setAlunni((prev) => { const next = typeof fn === "function" ? fn(prev) : fn; onAlunniChange && onAlunniChange(next); return next; });
+      };
+      const aggiornaAssegnazioni = (fn) => {
+        setAssegnazioni((prev) => { const next = typeof fn === "function" ? fn(prev) : fn; onAssegnazioniChange && onAssegnazioniChange(next); return next; });
+      };
 
       const exportPDF = async () => {
         setExporting(true);
@@ -556,7 +469,7 @@
           if (imgH > pdfH - marginTB * 2) { imgH = pdfH - marginTB * 2; imgW = imgH * imgRatio; }
           const x = (pdfW - imgW) / 2; const y = (pdfH - imgH) / 2;
           pdf.addImage(imgData, "JPEG", x, y, imgW, imgH);
-          pdf.save(`Piantina_${datiClasse.classe}${datiClasse.sezione}_${datiClasse.annoScolastico.replace("/","_")}.pdf`);
+          pdf.save(`Piantina_${datiClasse.classe}${datiClasse.sezione}_${datiClasse.indirizzo}_${datiClasse.annoScolastico.replace("/","_")}.pdf`);
           document.body.removeChild(printDiv);
         } catch (err) { console.error("Errore export PDF:", err); alert("Errore durante l'esportazione PDF."); }
         setExporting(false);
@@ -567,16 +480,74 @@
       const assignedIds = useMemo(() => new Set(Object.values(assegnazioni).map((a) => a.alunnoId)), [assegnazioni]);
       const nonAssegnati = useMemo(() => alunniOrd.filter((a) => !assignedIds.has(a.id)), [alunniOrd, assignedIds]);
 
-      const addAlunno = () => { const n = formattaTesto(nome), c = formattaTesto(cognome); if (!c) { setError("Inserisci almeno il cognome"); return; } if (alunni.length >= datiClasse.numAlunni) { setError(`Massimo ${datiClasse.numAlunni}`); return; } if (alunni.some((a) => a.cognome.toLowerCase() === c.toLowerCase() && a.nome.toLowerCase() === n.toLowerCase())) { setError("Già presente"); return; } setAlunni((p) => [...p, { id: Date.now(), nome: n, cognome: c }]); setNome(""); setCognome(""); setError(""); };
-      const removeAlunno = (id) => { setAlunni((p) => p.filter((a) => a.id !== id)); setAssegnazioni((p) => { const n = { ...p }; Object.keys(n).forEach((k) => { if (n[k].alunnoId === id) delete n[k]; }); return n; }); };
-      const handleFileImport = async (e) => { const file = e.target.files?.[0]; if (!file) return; setImportMsg(""); setError(""); const ext = file.name.split(".").pop().toLowerCase(); try { if (ext === "csv" || ext === "txt") { const text = await file.text(); processRows(Papa.parse(text, { header: false, skipEmptyLines: true }).data); } else if (ext === "xlsx" || ext === "xls") { const wb = XLSX.read(await file.arrayBuffer(), { type: "array" }); processRows(XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1 })); } else setError("Formato non supportato."); } catch { setError("Errore lettura file."); } if (fileInputRef.current) fileInputRef.current.value = ""; };
-      const processRows = (rows) => { if (!rows?.length) { setError("File vuoto"); return; } let startIdx = 0; const fh = String(rows[0]?.[0] || "").toLowerCase().trim(); if (["cognome","surname","last_name","lastname","nome","name"].includes(fh)) startIdx = 1; let cogIdx = 0, nomeIdx = 1; if (["nome","name","first_name","firstname"].includes(fh)) { nomeIdx = 0; cogIdx = 1; } const newA = []; let skipped = 0; for (let i = startIdx; i < rows.length; i++) { const r = rows[i]; if (!r?.length) continue; let c, n; if (r.length === 1) { const p = String(r[0]).trim().split(/\s+/); c = formattaTesto(p[0]); n = formattaTesto(p.slice(1).join(" ")); } else { c = formattaTesto(String(r[cogIdx] || "")); n = formattaTesto(String(r[nomeIdx] || "")); } if (!c && !n) continue; if (!c) { c = n; n = ""; } if ([...alunni, ...newA].some((a) => a.cognome.toLowerCase() === c.toLowerCase() && a.nome.toLowerCase() === n.toLowerCase())) { skipped++; continue; } if (alunni.length + newA.length >= datiClasse.numAlunni) { skipped += rows.length - i; break; } newA.push({ id: Date.now() + i, nome: n, cognome: c }); } setAlunni((p) => [...p, ...newA]); setImportMsg(`${newA.length} importati${skipped ? ` (${skipped} saltati)` : ""}`); };
+      const addAlunno = () => {
+        const n = formattaTesto(nome), c = formattaTesto(cognome);
+        if (!c) { setError("Inserisci almeno il cognome"); return; }
+        if (alunni.length >= datiClasse.numAlunni) { setError(`Massimo ${datiClasse.numAlunni}`); return; }
+        if (alunni.some((a) => a.cognome.toLowerCase() === c.toLowerCase() && a.nome.toLowerCase() === n.toLowerCase())) { setError("Già presente"); return; }
+        aggiornaAlunni((p) => [...p, { id: Date.now(), nome: n, cognome: c }]);
+        setNome(""); setCognome(""); setError("");
+      };
 
-      const assegnaRandomNuovi = () => { const liberi = seats.filter((s) => !assegnazioni[s.key]).map((s) => s.key).sort(() => Math.random() - 0.5); const nuove = { ...assegnazioni }; nonAssegnati.forEach((a, i) => { if (i < liberi.length) nuove[liberi[i]] = { alunnoId: a.id, locked: false }; }); setAssegnazioni(nuove); };
-      const randomizzaSbloccati = () => { const sbl = Object.entries(assegnazioni).filter(([, v]) => !v.locked); if (sbl.length < 2) return; const ids = sbl.map(([, v]) => v.alunnoId).sort(() => Math.random() - 0.5); const nuove = { ...assegnazioni }; sbl.forEach(([key], i) => { nuove[key] = { alunnoId: ids[i], locked: false }; }); setAssegnazioni(nuove); };
-      const toggleLock = (sk) => { if (!assegnazioni[sk]) return; setAssegnazioni((p) => ({ ...p, [sk]: { ...p[sk], locked: !p[sk].locked } })); };
-      const rimuoviAssegnazione = (sk) => { setAssegnazioni((p) => { const n = { ...p }; delete n[sk]; return n; }); };
-      const handleDrop = (sk) => { if (draggingAlunno && !assegnazioni[sk]) setAssegnazioni((p) => ({ ...p, [sk]: { alunnoId: draggingAlunno, locked: false } })); setDraggingAlunno(null); };
+      const removeAlunno = (id) => {
+        aggiornaAlunni((p) => p.filter((a) => a.id !== id));
+        aggiornaAssegnazioni((p) => { const n = { ...p }; Object.keys(n).forEach((k) => { if (n[k].alunnoId === id) delete n[k]; }); return n; });
+      };
+
+      const handleFileImport = async (e) => { const file = e.target.files?.[0]; if (!file) return; setImportMsg(""); setError(""); const ext = file.name.split(".").pop().toLowerCase(); try { if (ext === "csv" || ext === "txt") { const text = await file.text(); processRows(Papa.parse(text, { header: false, skipEmptyLines: true }).data); } else if (ext === "xlsx" || ext === "xls") { const wb = XLSX.read(await file.arrayBuffer(), { type: "array" }); processRows(XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1 })); } else setError("Formato non supportato."); } catch { setError("Errore lettura file."); } if (fileInputRef.current) fileInputRef.current.value = ""; };
+
+      const processRows = (rows) => {
+        if (!rows?.length) { setError("File vuoto"); return; }
+        let startIdx = 0; const fh = String(rows[0]?.[0] || "").toLowerCase().trim();
+        if (["cognome","surname","last_name","lastname","nome","name"].includes(fh)) startIdx = 1;
+        let cogIdx = 0, nomeIdx = 1;
+        if (["nome","name","first_name","firstname"].includes(fh)) { nomeIdx = 0; cogIdx = 1; }
+        const newA = []; let skipped = 0;
+        for (let i = startIdx; i < rows.length; i++) {
+          const r = rows[i]; if (!r?.length) continue;
+          let c, n;
+          if (r.length === 1) { const p = String(r[0]).trim().split(/\s+/); c = formattaTesto(p[0]); n = formattaTesto(p.slice(1).join(" ")); }
+          else { c = formattaTesto(String(r[cogIdx] || "")); n = formattaTesto(String(r[nomeIdx] || "")); }
+          if (!c && !n) continue; if (!c) { c = n; n = ""; }
+          if ([...alunni, ...newA].some((a) => a.cognome.toLowerCase() === c.toLowerCase() && a.nome.toLowerCase() === n.toLowerCase())) { skipped++; continue; }
+          if (alunni.length + newA.length >= datiClasse.numAlunni) { skipped += rows.length - i; break; }
+          newA.push({ id: Date.now() + i, nome: n, cognome: c });
+        }
+        aggiornaAlunni((p) => [...p, ...newA]);
+        setImportMsg(`${newA.length} importati${skipped ? ` (${skipped} saltati)` : ""}`);
+      };
+
+      const assegnaRandomNuovi = () => {
+        const liberi = seats.filter((s) => !assegnazioni[s.key]).map((s) => s.key).sort(() => Math.random() - 0.5);
+        const nuove = { ...assegnazioni };
+        nonAssegnati.forEach((a, i) => { if (i < liberi.length) nuove[liberi[i]] = { alunnoId: a.id, locked: false }; });
+        aggiornaAssegnazioni(nuove);
+      };
+
+      const randomizzaSbloccati = () => {
+        const sbl = Object.entries(assegnazioni).filter(([, v]) => !v.locked);
+        if (sbl.length < 2) return;
+        const ids = sbl.map(([, v]) => v.alunnoId).sort(() => Math.random() - 0.5);
+        const nuove = { ...assegnazioni };
+        sbl.forEach(([key], i) => { nuove[key] = { alunnoId: ids[i], locked: false }; });
+        aggiornaAssegnazioni(nuove);
+      };
+
+      const toggleLock = (sk) => {
+        if (!assegnazioni[sk]) return;
+        aggiornaAssegnazioni((p) => ({ ...p, [sk]: { ...p[sk], locked: !p[sk].locked } }));
+      };
+
+      const rimuoviAssegnazione = (sk) => {
+        aggiornaAssegnazioni((p) => { const n = { ...p }; delete n[sk]; return n; });
+      };
+
+      const handleDrop = (sk) => {
+        if (draggingAlunno && !assegnazioni[sk]) {
+          aggiornaAssegnazioni((p) => ({ ...p, [sk]: { alunnoId: draggingAlunno, locked: false } }));
+        }
+        setDraggingAlunno(null);
+      };
 
       const occupiedMap = useMemo(() => { const map = {}; desks.forEach((d) => { const t = TOOLS[d.type]; for (let c = 0; c < t.width; c++) for (let r = 0; r < t.height; r++) map[`${d.row+r},${d.col+c}`] = d.id; }); return map; }, [desks]);
       const getAlunno = (id) => alunni.find((a) => a.id === id);
@@ -666,18 +637,52 @@
     }
 
     // ============================================================
-    // App
+    // App — tutto lo stato vive qui per navigazione non distruttiva
     // ============================================================
     function App() {
-      const [fase, setFase] = useState("setup");
-      const [datiClasse, setDatiClasse] = useState(null);
-      const [pianta, setPianta] = useState(null);
-      const [showGuida, setShowGuida] = useState(false);
+      const [fase, setFase]                     = useState("setup");
+      const [datiClasse, setDatiClasse]         = useState(null);
+      const [pianta, setPianta]                 = useState(null);
+      const [alunni, setAlunni]                 = useState([]);
+      const [assegnazioni, setAssegnazioni]     = useState({});
+      const [showGuida, setShowGuida]           = useState(false);
+
+      // Nuova configurazione da zero: azzera tutto
+      function handleSetupComplete(d) {
+        setDatiClasse(d);
+        setPianta(null);
+        setAlunni([]);
+        setAssegnazioni({});
+        setFase("editor");
+      }
+
       return (
         <div style={{ display: "flex", flexDirection: "column", minHeight: "100vh" }}>
-          {fase === "setup" && <SetupClasse onComplete={(d) => { setDatiClasse(d); setFase("editor"); }} onGuida={() => setShowGuida(true)} />}
-          {fase === "editor" && <EditorPiantina datiClasse={datiClasse} onBack={() => setFase("setup")} onComplete={(d) => { setPianta(d); setFase("assegna"); }} />}
-          {fase === "assegna" && <AssegnaPosti datiClasse={datiClasse} desks={pianta} onBack={() => setFase("editor")} />}
+          {fase === "setup" && (
+            <SetupClasse
+              onComplete={handleSetupComplete}
+              onGuida={() => setShowGuida(true)}
+            />
+          )}
+          {fase === "editor" && (
+            <EditorPiantina
+              datiClasse={datiClasse}
+              onBack={() => setFase("setup")}
+              onComplete={(d) => { setPianta(d); setFase("assegna"); }}
+              initialDesks={pianta}
+            />
+          )}
+          {fase === "assegna" && (
+            <AssegnaPosti
+              datiClasse={datiClasse}
+              desks={pianta}
+              onBack={() => setFase("editor")}
+              initialAlunni={alunni}
+              initialAssegnazioni={assegnazioni}
+              onAlunniChange={setAlunni}
+              onAssegnazioniChange={setAssegnazioni}
+            />
+          )}
           {showGuida && <Guida onClose={() => setShowGuida(false)} />}
         </div>
       );
