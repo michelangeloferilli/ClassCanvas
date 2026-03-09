@@ -1,0 +1,689 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Piantina Classe</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.9/babel.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body, #root { min-height: 100vh; display: flex; flex-direction: column; }
+    body { font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; overflow-x: hidden; background-color: #1e293b; }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+  <script type="text/babel">
+    const { useState, useMemo, useRef, useEffect, useCallback } = React;
+
+    // ============================================================
+    // CONFIGURAZIONE GLOBALE
+    // ============================================================
+    const MAX_STUDENTI = 30;
+    const ANNO_CORRENTE = new Date().getFullYear();
+    const ANNI_SCOLASTICI = Array.from({ length: 3 }, (_, i) => {
+      const y = ANNO_CORRENTE - 1 + i;
+      return `${y}/${y + 1}`;
+    });
+    const CLASSI = ["1", "2", "3", "4", "5"];
+    const SEZIONI = "ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("");
+
+    const GRID_COLS = 11;
+    const GRID_ROWS = 9;
+    const GAP = 2;
+    const PANEL_WIDTH = 250;
+    const GRID_PADDING = 12;
+
+    function useCellDimensions(containerRef) {
+      const [dims, setDims] = useState({ w: 64, h: 64 });
+      const calculate = useCallback(() => {
+        if (containerRef.current) {
+          const availW = containerRef.current.clientWidth - GRID_PADDING * 2;
+          const availH = window.innerHeight - 180;
+          const maxByW = Math.floor((availW - GAP * (GRID_COLS - 1)) / GRID_COLS);
+          const maxByH = Math.floor((availH - GAP * (GRID_ROWS - 1)) / GRID_ROWS);
+          setDims({
+            w: Math.max(44, Math.min(maxByW, 140)),
+            h: Math.max(44, Math.min(maxByH, 90))
+          });
+        }
+      }, [containerRef]);
+      useEffect(() => {
+        const timer = setTimeout(calculate, 50);
+        window.addEventListener("resize", calculate);
+        return () => { clearTimeout(timer); window.removeEventListener("resize", calculate); };
+      }, [calculate]);
+      return dims;
+    }
+
+    const TOOLS = {
+      cattedra: { label: "Cattedra", width: 3, height: 1, seats: 0, color: "#7c3aed", icon: "🏫" },
+      banco1: { label: "Banco singolo", width: 1, height: 1, seats: 1, color: "#0284c7", icon: "🪑" },
+      banco2: { label: "Banco doppio", width: 2, height: 1, seats: 2, color: "#0284c7", icon: "🪑🪑" },
+      banco3: { label: "Banco triplo", width: 3, height: 1, seats: 3, color: "#0284c7", icon: "🪑🪑🪑" },
+    };
+
+    const PAGE_STYLE = {
+      background: "linear-gradient(135deg, #1e293b 0%, #334155 50%, #1e293b 100%)",
+      flex: 1, display: "flex", flexDirection: "column"
+    };
+    const PANEL_STYLE = { background: "#1e293b", border: "1px solid #334155" };
+
+    // ============================================================
+    // UTILITIES
+    // ============================================================
+    function calcolaDimensioneTesto(testo, cellW, cellH, baseRatio, isBold) {
+      if (!testo) return 10;
+      const maxFontSize = Math.min(cellW * baseRatio, cellH * 0.35);
+      const spazioDisponibile = cellW - 8;
+      const larghezzaMediaCarattere = isBold ? 0.65 : 0.55;
+      const larghezzaStimata = testo.length * maxFontSize * larghezzaMediaCarattere;
+      if (larghezzaStimata > spazioDisponibile) {
+        return Math.max(7, maxFontSize * (spazioDisponibile / larghezzaStimata));
+      }
+      return maxFontSize;
+    }
+
+    // ============================================================
+    // Header
+    // ============================================================
+    function Header({ onBack, backLabel, title, badge, badgeOk }) {
+      return (
+        <div style={{ padding: "12px 16px", display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: "8px", borderBottom: "1px solid #334155" }}>
+          <button onClick={onBack} style={{ background: "none", border: "none", cursor: "pointer", color: "#94a3b8", fontSize: "14px", fontWeight: 600 }}>
+            ← {backLabel}
+          </button>
+          <h1 style={{ fontSize: "18px", fontWeight: 700, color: "#fff" }}>{title}</h1>
+          <div style={{ fontSize: "13px", fontWeight: 600, padding: "4px 12px", borderRadius: "20px",
+            background: badgeOk ? "#065f46" : "#7f1d1d", color: badgeOk ? "#a7f3d0" : "#fecaca" }}>
+            {badge}
+          </div>
+        </div>
+      );
+    }
+
+    // ============================================================
+    // Guida
+    // ============================================================
+    function Guida({ onClose }) {
+      const sectionStyle = { marginBottom: "28px" };
+      const h2Style = { fontSize: "20px", fontWeight: 700, color: "#f59e0b", marginBottom: "12px", display: "flex", alignItems: "center", gap: "8px" };
+      const h3Style = { fontSize: "15px", fontWeight: 600, color: "#e2e8f0", marginBottom: "8px", marginTop: "16px" };
+      const pStyle = { fontSize: "14px", color: "#cbd5e1", lineHeight: 1.7, marginBottom: "8px" };
+      const liStyle = { fontSize: "14px", color: "#cbd5e1", lineHeight: 1.7, marginBottom: "4px", paddingLeft: "8px" };
+      const tipStyle = { background: "#0c4a6e", border: "1px solid #075985", borderRadius: "8px", padding: "12px 16px", marginTop: "8px", marginBottom: "8px" };
+      const tipText = { fontSize: "13px", color: "#7dd3fc", lineHeight: 1.6 };
+      const kbdStyle = { background: "#334155", color: "#f59e0b", padding: "2px 6px", borderRadius: "4px", fontSize: "12px", fontWeight: 600, border: "1px solid #475569" };
+
+      return (
+        <div style={{ position: "fixed", inset: 0, zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center" }}
+          onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+          {/* Backdrop */}
+          <div style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,0.7)", backdropFilter: "blur(4px)" }} />
+          {/* Modal */}
+          <div style={{ position: "relative", width: "90%", maxWidth: "820px", maxHeight: "90vh", background: "#1e293b",
+            borderRadius: "16px", border: "1px solid #334155", boxShadow: "0 25px 60px rgba(0,0,0,0.5)",
+            display: "flex", flexDirection: "column", overflow: "hidden" }}>
+            {/* Header modale */}
+            <div style={{ padding: "16px 20px", display: "flex", alignItems: "center", justifyContent: "space-between",
+              borderBottom: "1px solid #334155", flexShrink: 0 }}>
+              <h2 style={{ fontSize: "18px", fontWeight: 700, color: "#fff" }}>📖 Guida all'uso</h2>
+              <button onClick={onClose} style={{ background: "#334155", border: "none", borderRadius: "8px",
+                width: "32px", height: "32px", display: "flex", alignItems: "center", justifyContent: "center",
+                color: "#94a3b8", fontSize: "16px", cursor: "pointer" }}>✕</button>
+            </div>
+            {/* Contenuto scrollabile */}
+            <div style={{ flex: 1, overflowY: "auto", padding: "24px" }}>
+
+              {/* Intro */}
+              <div style={sectionStyle}>
+                <h2 style={h2Style}>👋 Benvenuto in Piantina Classe</h2>
+                <p style={pStyle}>
+                  Questa applicazione ti permette di creare la piantina della tua classe, assegnare gli alunni ai banchi e stampare il risultato in PDF. Funziona interamente nel browser, non serve installare nulla e i dati restano nel tuo computer.
+                </p>
+              </div>
+
+              {/* Fase 1 */}
+              <div style={sectionStyle}>
+                <h2 style={h2Style}>📋 Fase 1 — Configura la classe</h2>
+                <p style={pStyle}>
+                  Nella schermata iniziale inserisci i dati della classe: anno scolastico, classe, sezione, indirizzo di studio e numero di alunni (massimo 30). Questi dati appariranno anche nell'intestazione del PDF.
+                </p>
+                <p style={pStyle}>
+                  Clicca <strong style={{ color: "#f59e0b" }}>"Continua → Posiziona i banchi"</strong> per procedere.
+                </p>
+              </div>
+
+              {/* Fase 2 */}
+              <div style={sectionStyle}>
+                <h2 style={h2Style}>📐 Fase 2 — Posiziona i banchi</h2>
+                <p style={pStyle}>
+                  In questa schermata vedrai una griglia che rappresenta l'aula. Sulla sinistra trovi due pannelli:
+                </p>
+
+                <h3 style={h3Style}>⚡ Pannello Azioni</h3>
+                <p style={pStyle}>Tre modalità di lavoro:</p>
+                <div style={{ paddingLeft: "16px" }}>
+                  <p style={liStyle}><strong style={{ color: "#38bdf8" }}>➕ Aggiungi</strong> — Seleziona un elemento dal pannello sottostante e clicca sulla griglia per posizionarlo.</p>
+                  <p style={liStyle}><strong style={{ color: "#2dd4bf" }}>✋ Sposta</strong> — Clicca su un banco già posizionato e trascinalo nella nuova posizione.</p>
+                  <p style={liStyle}><strong style={{ color: "#f87171" }}>🗑 Cancella</strong> — Clicca su un banco per rimuoverlo dalla griglia.</p>
+                </div>
+
+                <h3 style={h3Style}>🧰 Pannello Elemento</h3>
+                <p style={pStyle}>
+                  Scegli cosa posizionare: la <strong style={{ color: "#a78bfa" }}>Cattedra</strong> (una sola, occupa 3 celle) oppure i <strong style={{ color: "#38bdf8" }}>banchi</strong> (singolo = 1 posto, doppio = 2, triplo = 3). I banchi si disabilitano automaticamente quando non ci sono più posti disponibili.
+                </p>
+
+                <div style={tipStyle}>
+                  <p style={tipText}>
+                    💡 <strong>Trucco veloce:</strong> In modalità Aggiungi, se clicchi su un banco già posizionato dello <em>stesso tipo</em> lo rimuovi; se clicchi con un tipo <em>diverso</em> selezionato, lo sostituisci.
+                  </p>
+                </div>
+
+                <p style={pStyle}>
+                  Il contatore in alto a destra mostra i posti posizionati rispetto al numero di alunni. Quando hai posizionato abbastanza posti e la cattedra, apparirà il pulsante per continuare.
+                </p>
+              </div>
+
+              {/* Fase 3 */}
+              <div style={sectionStyle}>
+                <h2 style={h2Style}>👥 Fase 3 — Assegna gli alunni</h2>
+                <p style={pStyle}>
+                  In questa schermata vedi la piantina al centro e sulla sinistra i pannelli per gestire gli alunni.
+                </p>
+
+                <h3 style={h3Style}>✏️ Inserimento alunni</h3>
+                <p style={pStyle}>
+                  Puoi aggiungere gli alunni in due modi:
+                </p>
+                <div style={{ paddingLeft: "16px" }}>
+                  <p style={liStyle}><strong>Manualmente:</strong> scrivi cognome e nome, poi clicca "Aggiungi" o premi <span style={kbdStyle}>Invio</span>. I nomi vengono formattati automaticamente.</p>
+                  <p style={liStyle}><strong>Da file:</strong> clicca "📄 Scegli file" e importa un file CSV o Excel (.xlsx). Il file deve avere le colonne Cognome e Nome (l'header viene riconosciuto automaticamente).</p>
+                </div>
+
+                <h3 style={h3Style}>🎲 Assegnazione ai banchi</h3>
+                <p style={pStyle}>Hai diverse opzioni per assegnare gli alunni:</p>
+                <div style={{ paddingLeft: "16px" }}>
+                  <p style={liStyle}><strong>Trascinamento:</strong> trascina un alunno dalla lista "Non assegnati" e rilascialo su un banco vuoto (si illumina quando ci passi sopra).</p>
+                  <p style={liStyle}><strong style={{ color: "#2dd4bf" }}>🎲 Assegna non assegnati:</strong> posiziona casualmente tutti gli alunni ancora in lista nei posti liberi.</p>
+                  <p style={liStyle}><strong style={{ color: "#a78bfa" }}>🔀 Mescola sbloccati:</strong> scambia casualmente le posizioni degli alunni già assegnati che non sono bloccati.</p>
+                </div>
+
+                <h3 style={h3Style}>Gestire i banchi assegnati</h3>
+                <p style={pStyle}>
+                  Su ogni banco con un alunno assegnato appaiono due pulsantini:
+                </p>
+                <div style={{ paddingLeft: "16px" }}>
+                  <p style={liStyle}><span style={{ background: "rgba(239,68,68,0.8)", color: "#fff", padding: "1px 6px", borderRadius: "4px", fontSize: "12px" }}>✕</span> in alto a sinistra — rimuove l'alunno dal banco e lo rimette nella lista.</p>
+                  <p style={liStyle}><span style={{ background: "rgba(100,116,139,0.5)", color: "#fff", padding: "1px 6px", borderRadius: "4px", fontSize: "12px" }}>🔓</span> / <span style={{ background: "rgba(251,191,36,0.9)", color: "#fff", padding: "1px 6px", borderRadius: "4px", fontSize: "12px" }}>🔒</span> in alto a destra — blocca/sblocca la posizione. Un alunno bloccato non viene spostato dalla randomizzazione.</p>
+                </div>
+
+                <div style={tipStyle}>
+                  <p style={tipText}>
+                    💡 <strong>Strategia consigliata:</strong> Usa "Assegna non assegnati" per il primo posizionamento. Poi blocca gli alunni che ti convincono e usa "Mescola sbloccati" per rimescolare solo gli altri, finché la disposizione ti soddisfa.
+                  </p>
+                </div>
+              </div>
+
+              {/* PDF */}
+              <div style={sectionStyle}>
+                <h2 style={h2Style}>📄 Esportazione PDF</h2>
+                <p style={pStyle}>
+                  Quando almeno un alunno è assegnato, in fondo alla colonna sinistra appare il pulsante <strong style={{ color: "#f59e0b" }}>"📄 Scarica PDF"</strong>. Il PDF viene generato in formato A4 orizzontale con:
+                </p>
+                <div style={{ paddingLeft: "16px" }}>
+                  <p style={liStyle}>Intestazione con classe, sezione, indirizzo e anno scolastico</p>
+                  <p style={liStyle}>Piantina con cattedra e banchi con i nomi degli alunni</p>
+                  <p style={liStyle}>Data di generazione nel footer</p>
+                </div>
+                <p style={pStyle}>
+                  Il PDF è pronto per essere stampato su foglio A4 orizzontale. Le icone di blocco e i pulsanti non appaiono nel PDF.
+                </p>
+              </div>
+
+              {/* File import */}
+              <div style={sectionStyle}>
+                <h2 style={h2Style}>📂 Formato file per l'importazione</h2>
+                <p style={pStyle}>
+                  L'applicazione accetta file <strong>CSV</strong>, <strong>TXT</strong>, <strong>XLS</strong> e <strong>XLSX</strong>. Il file deve contenere i dati degli alunni con questa struttura:
+                </p>
+                <div style={{ background: "#0f172a", borderRadius: "8px", padding: "16px", marginTop: "8px", fontFamily: "monospace", fontSize: "13px", color: "#94a3b8", lineHeight: 1.8, overflowX: "auto" }}>
+                  <div style={{ color: "#64748b" }}>// Formato consigliato (con header):</div>
+                  <div><span style={{ color: "#f59e0b" }}>Cognome</span>,<span style={{ color: "#38bdf8" }}>Nome</span></div>
+                  <div>Rossi,Mario</div>
+                  <div>Bianchi,Giulia</div>
+                  <div>Verdi,Luca</div>
+                  <div style={{ marginTop: "12px", color: "#64748b" }}>// Funziona anche senza header</div>
+                  <div style={{ color: "#64748b" }}>// e con una sola colonna (cognome)</div>
+                </div>
+                <p style={{ ...pStyle, marginTop: "8px" }}>
+                  L'header viene riconosciuto automaticamente. Se la prima colonna si chiama "Nome" o "Name", l'ordine delle colonne viene invertito. I duplicati e i nomi oltre il limite vengono saltati automaticamente.
+                </p>
+              </div>
+
+              {/* Note */}
+              <div style={sectionStyle}>
+                <h2 style={h2Style}>ℹ️ Note importanti</h2>
+                <div style={{ paddingLeft: "16px" }}>
+                  <p style={liStyle}>I dati restano nel tuo browser e non vengono inviati a nessun server.</p>
+                  <p style={liStyle}>Se ricarichi la pagina, i dati vengono persi. Ricorda di esportare il PDF prima di chiudere.</p>
+                  <p style={liStyle}>L'applicazione funziona su qualsiasi browser moderno (Chrome, Firefox, Edge, Safari).</p>
+                  <p style={liStyle}>Per risultati ottimali, usa un computer con schermo di almeno 13 pollici.</p>
+                </div>
+              </div>
+
+              <div style={{ borderTop: "1px solid #334155", paddingTop: "16px", textAlign: "center" }}>
+                <button onClick={onClose} style={{ padding: "10px 28px", borderRadius: "12px", fontWeight: 600, fontSize: "14px",
+                  background: "linear-gradient(135deg, #f59e0b, #d97706)", color: "#fff", border: "none", cursor: "pointer",
+                  boxShadow: "0 4px 14px rgba(245,158,11,0.4)" }}>
+                  Chiudi guida
+                </button>
+                <p style={{ fontSize: "12px", color: "#64748b", marginTop: "16px" }}>Piantina Classe v1.0</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    // ============================================================
+    // SetupClasse
+    // ============================================================
+    function SetupClasse({ onComplete, onGuida }) {
+      const [formData, setFormData] = useState({ annoScolastico: ANNI_SCOLASTICI[1], classe: "1", sezione: "A", indirizzo: "", numAlunni: 20 });
+      const [errors, setErrors] = useState({});
+      
+      const handleChange = (field, value) => { setFormData((p) => ({ ...p, [field]: value })); if (errors[field]) setErrors((p) => ({ ...p, [field]: null })); };
+      
+      const validate = () => {
+        const e = {}; if (!formData.indirizzo.trim()) e.indirizzo = "Inserisci l'indirizzo";
+        if (formData.numAlunni < 1 || formData.numAlunni > MAX_STUDENTI) e.numAlunni = `Tra 1 e ${MAX_STUDENTI}`;
+        setErrors(e); return Object.keys(e).length === 0;
+      };
+      
+      const handleSubmit = () => { if (validate()) onComplete(formData); };
+      
+      const iStyle = (err) => ({ width: "100%", padding: "10px 12px", borderRadius: "8px", fontSize: "14px", color: "#1e293b", background: "#f8fafc", border: `1.5px solid ${err ? "#ef4444" : "#cbd5e1"}`, outline: "none" });
+
+      return (
+        <div style={{ ...PAGE_STYLE, padding: "32px 16px", justifyContent: "center" }}>
+          <div style={{ width: "100%", maxWidth: "480px", margin: "auto" }}>
+            <div style={{ textAlign: "center", marginBottom: "32px" }}>
+              <div style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", width: "64px", height: "64px",
+                borderRadius: "16px", marginBottom: "16px", background: "linear-gradient(135deg, #f59e0b, #d97706)" }}>
+                <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/>
+                </svg>
+              </div>
+              <h1 style={{ fontSize: "28px", fontWeight: 700, color: "#fff" }}>Piantina Classe</h1>
+              <p style={{ color: "#94a3b8", marginTop: "8px" }}>Configura la classe per iniziare</p>
+            </div>
+            <div style={{ background: "#fff", borderRadius: "16px", padding: "24px", boxShadow: "0 25px 50px rgba(0,0,0,0.25)" }}>
+              <div style={{ marginBottom: "20px" }}>
+                <label style={{ display: "block", fontSize: "13px", fontWeight: 600, color: "#334155", marginBottom: "6px" }}>Anno Scolastico</label>
+                <select value={formData.annoScolastico} onChange={(e) => handleChange("annoScolastico", e.target.value)} style={iStyle(false)}>
+                  {ANNI_SCOLASTICI.map((a) => <option key={a} value={a}>{a}</option>)}
+                </select>
+              </div>
+              <div style={{ display: "flex", gap: "12px", marginBottom: "20px" }}>
+                <div style={{ flex: 1 }}>
+                  <label style={{ display: "block", fontSize: "13px", fontWeight: 600, color: "#334155", marginBottom: "6px" }}>Classe</label>
+                  <select value={formData.classe} onChange={(e) => handleChange("classe", e.target.value)} style={iStyle(false)}>
+                    {CLASSI.map((c) => <option key={c} value={c}>{c}</option>)}
+                  </select>
+                </div>
+                <div style={{ flex: 1 }}>
+                  <label style={{ display: "block", fontSize: "13px", fontWeight: 600, color: "#334155", marginBottom: "6px" }}>Sezione</label>
+                  <select value={formData.sezione} onChange={(e) => handleChange("sezione", e.target.value)} style={iStyle(false)}>
+                    {SEZIONI.map((s) => <option key={s} value={s}>{s}</option>)}
+                  </select>
+                </div>
+              </div>
+              <div style={{ marginBottom: "20px" }}>
+                <label style={{ display: "block", fontSize: "13px", fontWeight: 600, color: "#334155", marginBottom: "6px" }}>Indirizzo di studio</label>
+                <input type="text" value={formData.indirizzo} onChange={(e) => handleChange("indirizzo", e.target.value)} placeholder="es. Amministrazione Finanza..." style={iStyle(errors.indirizzo)} />
+              </div>
+              <div style={{ marginBottom: "24px" }}>
+                <label style={{ display: "block", fontSize: "13px", fontWeight: 600, color: "#334155", marginBottom: "6px" }}>Numero alunni</label>
+                <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+                  <button onClick={() => handleChange("numAlunni", Math.max(1, formData.numAlunni - 1))} style={{ width: "40px", height: "40px", borderRadius: "8px", background: "#f1f5f9", border: "1.5px solid #cbd5e1", cursor: "pointer", fontWeight: "bold" }}>−</button>
+                  <input type="number" min={1} max={MAX_STUDENTI} value={formData.numAlunni} onChange={(e) => handleChange("numAlunni", parseInt(e.target.value) || 0)} style={{ ...iStyle(errors.numAlunni), width: "80px", textAlign: "center", fontWeight: 600 }} />
+                  <button onClick={() => handleChange("numAlunni", Math.min(MAX_STUDENTI, formData.numAlunni + 1))} style={{ width: "40px", height: "40px", borderRadius: "8px", background: "#f1f5f9", border: "1.5px solid #cbd5e1", cursor: "pointer", fontWeight: "bold" }}>+</button>
+                </div>
+              </div>
+              <div style={{ borderRadius: "12px", padding: "16px", marginBottom: "24px", background: "#fffbeb", border: "1px solid #fde68a" }}>
+                <p style={{ fontSize: "14px", fontWeight: 600, color: "#92400e" }}>
+                  📋 Classe {formData.classe}ª {formData.sezione}{formData.indirizzo ? ` — ${formData.indirizzo}` : ""}
+                </p>
+                <p style={{ fontSize: "12px", marginTop: "4px", color: "#a16207" }}>{formData.annoScolastico} · {formData.numAlunni} alunni</p>
+              </div>
+              <button onClick={handleSubmit} style={{ width: "100%", padding: "12px", borderRadius: "12px", color: "#fff", fontWeight: 600, background: "linear-gradient(135deg, #f59e0b, #d97706)", border: "none", cursor: "pointer", boxShadow: "0 4px 14px rgba(245,158,11,0.4)" }}>
+                Continua → Posiziona i banchi
+              </button>
+            </div>
+
+            {/* Pulsante Guida */}
+            <div style={{ textAlign: "center", marginTop: "20px" }}>
+              <button onClick={onGuida} style={{ background: "none", border: "1px solid #475569", borderRadius: "10px",
+                padding: "8px 20px", color: "#94a3b8", fontSize: "13px", cursor: "pointer", display: "inline-flex", alignItems: "center", gap: "6px" }}>
+                📖 Guida all'uso
+              </button>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    // ============================================================
+    // EditorPiantina (invariato dal codice dell'utente)
+    // ============================================================
+    function EditorPiantina({ datiClasse, onBack, onComplete }) {
+      const [desks, setDesks] = useState([]);
+      const [mode, setMode] = useState("aggiungi");
+      const [selectedElement, setSelectedElement] = useState("cattedra");
+      const [hoveredCell, setHoveredCell] = useState(null);
+      const [nextId, setNextId] = useState(1);
+      const [dragging, setDragging] = useState(null);
+      const gridRef = useRef(null);
+      const gridContainerRef = useRef(null);
+      const { w: cellW, h: cellH } = useCellDimensions(gridContainerRef);
+
+      const occupiedMap = useMemo(() => { const map = {}; desks.forEach((d) => { const t = TOOLS[d.type]; for (let c = 0; c < t.width; c++) for (let r = 0; r < t.height; r++) map[`${d.row + r},${d.col + c}`] = d.id; }); return map; }, [desks]);
+      const totalSeats = useMemo(() => desks.reduce((s, d) => s + TOOLS[d.type].seats, 0), [desks]);
+      const remainingSeats = datiClasse.numAlunni - totalSeats;
+      const hasCattedra = desks.some((d) => d.type === "cattedra");
+      const seatsOk = totalSeats >= datiClasse.numAlunni;
+      const elementEnabled = useMemo(() => ({ cattedra: !hasCattedra, banco1: remainingSeats >= 1, banco2: remainingSeats >= 2, banco3: remainingSeats >= 3 }), [hasCattedra, remainingSeats]);
+
+      const switchMode = (m) => { setDragging(null); if (m === "aggiungi" && mode !== "aggiungi") { if (elementEnabled.banco2) setSelectedElement("banco2"); else if (elementEnabled.banco1) setSelectedElement("banco1"); else if (elementEnabled.banco3) setSelectedElement("banco3"); else if (elementEnabled.cattedra) setSelectedElement("cattedra"); } setMode(m); };
+      const canPlace = (type, row, col, ignoreId = null) => { const t = TOOLS[type]; if (col + t.width > GRID_COLS || row + t.height > GRID_ROWS || row < 0 || col < 0) return false; for (let c = 0; c < t.width; c++) for (let r = 0; r < t.height; r++) { const occ = occupiedMap[`${row + r},${col + c}`]; if (occ && occ !== ignoreId) return false; } if (!ignoreId && type !== "cattedra" && totalSeats + t.seats > datiClasse.numAlunni) return false; return true; };
+
+      const previewCells = useMemo(() => {
+        if (!hoveredCell) return { cells: [], valid: false, action: null };
+        const { row, col } = hoveredCell; const existId = occupiedMap[`${row},${col}`];
+        if (mode === "sposta" && dragging) { const dd = desks.find((d) => d.id === dragging.deskId); if (!dd) return { cells: [], valid: false, action: null }; const t = TOOLS[dd.type]; const tr = row - dragging.offsetRow, tc = col - dragging.offsetCol; const valid = canPlace(dd.type, tr, tc, dragging.deskId); const cells = []; for (let c = 0; c < t.width; c++) for (let r = 0; r < t.height; r++) cells.push(`${tr+r},${tc+c}`); return { cells, valid, action: "move" }; }
+        if (mode === "cancella" && existId) { const d = desks.find((x) => x.id === existId); if (d) { const t = TOOLS[d.type]; const cells = []; for (let c = 0; c < t.width; c++) for (let r = 0; r < t.height; r++) cells.push(`${d.row+r},${d.col+c}`); return { cells, valid: true, action: "remove" }; } }
+        if (mode === "aggiungi" && selectedElement) {
+          if (existId) { const ed = desks.find((x) => x.id === existId); if (ed) { const t = TOOLS[ed.type]; const cells = []; for (let c = 0; c < t.width; c++) for (let r = 0; r < t.height; r++) cells.push(`${ed.row+r},${ed.col+c}`); if (ed.type === selectedElement) return { cells, valid: true, action: "remove" }; const nt = TOOLS[selectedElement]; const canR = canPlace(selectedElement, ed.row, ed.col, existId); if (selectedElement === "cattedra" && hasCattedra && ed.type !== "cattedra") return { cells, valid: false, action: "replace" }; const diff = nt.seats - t.seats; if (diff > 0 && totalSeats + diff > datiClasse.numAlunni) return { cells, valid: false, action: "replace" }; return { cells, valid: canR, action: "replace" }; } }
+          const t = TOOLS[selectedElement]; const valid = canPlace(selectedElement, row, col) && !(selectedElement === "cattedra" && hasCattedra); const cells = []; for (let c = 0; c < t.width; c++) for (let r = 0; r < t.height; r++) cells.push(`${row+r},${col+c}`); return { cells, valid, action: "place" };
+        }
+        return { cells: [], valid: false, action: null };
+      }, [mode, selectedElement, hoveredCell, occupiedMap, hasCattedra, desks, dragging, totalSeats, datiClasse.numAlunni]);
+
+      const getCellFromMouse = (e) => { if (!gridRef.current) return null; const rect = gridRef.current.getBoundingClientRect(); const col = Math.floor((e.clientX - rect.left) / (cellW + GAP)); const row = Math.floor((e.clientY - rect.top) / (cellH + GAP)); if (col < 0 || col >= GRID_COLS || row < 0 || row >= GRID_ROWS) return null; return { row, col }; };
+
+      const handleCellClick = (row, col) => {
+        if (dragging) return; const existId = occupiedMap[`${row},${col}`];
+        if (mode === "cancella") { if (existId) setDesks((p) => p.filter((d) => d.id !== existId)); return; }
+        if (mode === "aggiungi" && selectedElement) {
+          if (existId) { const ed = desks.find((d) => d.id === existId); if (!ed) return; if (ed.type === selectedElement) { setDesks((p) => p.filter((d) => d.id !== existId)); } else { if (selectedElement === "cattedra" && hasCattedra && ed.type !== "cattedra") return; if (!canPlace(selectedElement, ed.row, ed.col, existId)) return; const diff = TOOLS[selectedElement].seats - TOOLS[ed.type].seats; if (diff > 0 && totalSeats + diff > datiClasse.numAlunni) return; setDesks((p) => p.map((d) => d.id === existId ? { ...d, type: selectedElement } : d)); if (selectedElement === "cattedra") setSelectedElement("banco2"); } }
+          else { if (selectedElement === "cattedra" && hasCattedra) return; if (!canPlace(selectedElement, row, col)) return; const ns = totalSeats + TOOLS[selectedElement].seats; setDesks((p) => [...p, { id: nextId, type: selectedElement, row, col }]); setNextId((n) => n + 1); if (selectedElement === "cattedra") { setSelectedElement("banco2"); } else { const nr = datiClasse.numAlunni - ns; if (nr < TOOLS[selectedElement].seats) { if (nr >= 2) setSelectedElement("banco2"); else if (nr >= 1) setSelectedElement("banco1"); else setSelectedElement(null); } } }
+        }
+      };
+
+      const handleMouseDown = (e, row, col) => { if (mode !== "sposta") return; const id = occupiedMap[`${row},${col}`]; if (!id) return; const d = desks.find((x) => x.id === id); if (!d) return; e.preventDefault(); setDragging({ deskId: d.id, offsetRow: row - d.row, offsetCol: col - d.col }); };
+      const handleMouseUp = (e) => { if (!dragging) return; const cell = getCellFromMouse(e); if (cell) { const d = desks.find((x) => x.id === dragging.deskId); if (d) { const tr = cell.row - dragging.offsetRow, tc = cell.col - dragging.offsetCol; if (canPlace(d.type, tr, tc, dragging.deskId)) setDesks((p) => p.map((x) => x.id === dragging.deskId ? { ...x, row: tr, col: tc } : x)); } } setDragging(null); };
+
+      const actionBtn = (active, color) => ({ width: "100%", marginBottom: "6px", padding: "8px 10px", borderRadius: "8px", textAlign: "left", fontSize: "13px", fontWeight: 600, display: "flex", alignItems: "center", gap: "8px", whiteSpace: "nowrap", background: active ? color : "#0f172a", border: `1.5px solid ${active ? color : "#334155"}`, color: active ? "#fff" : "#cbd5e1", cursor: "pointer" });
+      const elBtn = (active, disabled) => ({ width: "100%", marginBottom: "4px", padding: "7px 10px", borderRadius: "8px", textAlign: "left", fontSize: "13px", display: "flex", alignItems: "center", gap: "8px", whiteSpace: "nowrap", background: active ? "#0284c7" : disabled ? "#1a1a2e" : "#0f172a", border: `1.5px solid ${active ? "#38bdf8" : "#334155"}`, color: disabled ? "#475569" : active ? "#fff" : "#cbd5e1", cursor: disabled ? "not-allowed" : "pointer" });
+
+      return (
+        <div style={PAGE_STYLE}>
+          <Header onBack={onBack} backLabel="Setup" title={`📐 Editor Piantina — ${datiClasse.classe}ª ${datiClasse.sezione}`} badge={`${totalSeats}/${datiClasse.numAlunni} posti`} badgeOk={seatsOk} />
+          <div style={{ display: "flex", gap: "16px", padding: "16px", flex: 1, overflow: "hidden" }}>
+            <div style={{ width: "250px", flexShrink: 0, overflowY: "auto" }}>
+              <div style={{ ...PANEL_STYLE, borderRadius: "12px", padding: "14px", marginBottom: "12px" }}>
+                <h3 style={{ fontSize: "13px", fontWeight: 600, color: "#cbd5e1", marginBottom: "10px" }}>⚡ Azioni</h3>
+                <button onClick={() => switchMode("aggiungi")} style={actionBtn(mode === "aggiungi", "#0284c7")}><span>➕</span> Aggiungi</button>
+                <button onClick={() => switchMode("sposta")} style={actionBtn(mode === "sposta", "#0d9488")}><span>✋</span> Sposta</button>
+                <button onClick={() => switchMode("cancella")} style={{...actionBtn(mode === "cancella", "#dc2626"), marginBottom: "12px"}}><span>🗑</span> Cancella</button>
+                <div style={{ borderTop: "1px solid #334155", paddingTop: "10px" }}>
+                  <button onClick={() => { setDesks([]); setDragging(null); setMode("aggiungi"); setSelectedElement("cattedra"); }} style={{ width: "100%", padding: "7px", borderRadius: "8px", fontSize: "12px", fontWeight: 500, background: "#0f172a", color: "#94a3b8", border: "1px solid #334155", cursor: "pointer" }}>🧹 Svuota tutto</button>
+                </div>
+              </div>
+              <div style={{ ...PANEL_STYLE, borderRadius: "12px", padding: "14px", opacity: mode !== "aggiungi" ? 0.5 : 1 }}>
+                <h3 style={{ fontSize: "13px", fontWeight: 600, color: "#cbd5e1", marginBottom: "8px" }}>🧰 Elemento</h3>
+                {remainingSeats > 0 ? (<div style={{ marginBottom: "10px", padding: "6px", borderRadius: "8px", fontSize: "11px", fontWeight: 600, textAlign: "center", background: "#0c4a6e", color: "#7dd3fc" }}>Posti rimanenti: {remainingSeats}</div>) : (<div style={{ marginBottom: "10px", padding: "6px", borderRadius: "8px", fontSize: "11px", fontWeight: 600, textAlign: "center", background: "#065f46", color: "#a7f3d0" }}>✓ Completo</div>)}
+                <p style={{ fontSize: "11px", color: "#64748b", fontWeight: 600, marginBottom: "4px" }}>CATTEDRA</p>
+                {(() => { const dis = mode !== "aggiungi" || !elementEnabled.cattedra; const act = mode === "aggiungi" && selectedElement === "cattedra"; return (<button onClick={() => !dis && setSelectedElement("cattedra")} disabled={dis} style={{ ...elBtn(false, dis), background: act ? "#7c3aed" : dis ? "#1a1a2e" : "#0f172a", border: `1.5px solid ${act ? "#a78bfa" : "#334155"}`, color: dis ? "#475569" : act ? "#fff" : "#cbd5e1", marginBottom: "10px" }}><span>{TOOLS.cattedra.icon}</span><span style={{ fontWeight: 600 }}>{TOOLS.cattedra.label}</span>{hasCattedra && <span style={{ fontSize: "11px", marginLeft: "auto" }}>✓</span>}</button>); })()}
+                <p style={{ fontSize: "11px", color: "#64748b", fontWeight: 600, marginBottom: "4px" }}>BANCHI</p>
+                {["banco1", "banco2", "banco3"].map((type) => { const dis = mode !== "aggiungi" || !elementEnabled[type]; const act = mode === "aggiungi" && selectedElement === type; return (<button key={type} onClick={() => !dis && setSelectedElement(type)} disabled={dis} style={elBtn(act, dis)}><span>{TOOLS[type].icon}</span><span style={{ fontWeight: 600 }}>{TOOLS[type].label}</span><span style={{ fontSize: "11px", marginLeft: "auto", opacity: 0.6 }}>{TOOLS[type].seats}p</span></button>); })}
+              </div>
+            </div>
+            <div ref={gridContainerRef} style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", alignItems: "center" }}>
+              <div style={{ borderRadius: "12px", padding: `${GRID_PADDING}px`, background: "#0f172a", border: "1px solid #1e293b", flex: 1, display: "flex", alignItems: "center", justifyContent: "center", width: "100%" }} onMouseLeave={() => setHoveredCell(null)}>
+                <div ref={gridRef} onMouseMove={(e) => setHoveredCell(getCellFromMouse(e))} onMouseUp={handleMouseUp} style={{ display: "grid", gridTemplateColumns: `repeat(${GRID_COLS}, ${cellW}px)`, gridTemplateRows: `repeat(${GRID_ROWS}, ${cellH}px)`, gap: `${GAP}px`, cursor: mode === "sposta" ? (dragging ? "grabbing" : "grab") : mode === "cancella" ? "pointer" : "crosshair" }}>
+                  {Array.from({ length: GRID_ROWS * GRID_COLS }).map((_, idx) => {
+                    const row = Math.floor(idx / GRID_COLS), col = idx % GRID_COLS, key = `${row},${col}`;
+                    const dId = occupiedMap[key], isPrev = previewCells.cells.includes(key); const desk = dId ? desks.find((d) => d.id === dId) : null;
+                    const isOrig = desk && desk.row === row && desk.col === col; const tool = desk ? TOOLS[desk.type] : null; const isDrag = dragging && dId === dragging.deskId;
+                    let bg = "#1a2332", bd = "1px solid #1e293b";
+                    if (isPrev && !isDrag) { const a = previewCells.action, v = previewCells.valid; if (a === "remove") { bg = "rgba(239,68,68,0.25)"; bd = "1.5px solid #ef4444"; } else if (a === "replace") { bg = v ? "rgba(251,191,36,0.2)" : "rgba(239,68,68,0.2)"; bd = `1.5px solid ${v ? "#fbbf24" : "#ef4444"}`; } else { bg = v ? "rgba(34,197,94,0.2)" : "rgba(239,68,68,0.2)"; bd = `1.5px solid ${v ? "#22c55e" : "#ef4444"}`; } }
+                    if (dId && tool && !isDrag) { const ic = desk.type === "cattedra"; bg = ic ? "#5b21b6" : "#075985"; bd = `1px solid ${ic ? "#7c3aed" : "#0284c7"}`; }
+                    if (isDrag) { bg = "#1a2332"; bd = "1px dashed #475569"; }
+                    let br = "4px"; if (desk && tool && !isDrag) { const L = col === desk.col, R = col === desk.col + tool.width - 1; br = `${L?"8px":"0"} ${R?"8px":"0"} ${R?"8px":"0"} ${L?"8px":"0"}`; }
+                    return (<div key={key} onClick={() => handleCellClick(row, col)} onMouseDown={(e) => handleMouseDown(e, row, col)} onMouseEnter={() => setHoveredCell({ row, col })} style={{ width: cellW, height: cellH, background: bg, border: bd, borderRadius: br, display: "flex", alignItems: "center", justifyContent: "center", transition: dragging ? "none" : "all 0.12s", position: "relative", zIndex: isOrig && desk?.type === "cattedra" && !isDrag ? 5 : 1 }}>
+                      {isOrig && desk?.type === "cattedra" && !isDrag && (<span style={{ fontSize: `${Math.max(11, cellH * 0.25)}px`, fontWeight: 600, color: "#e2e8f0", textAlign: "center", pointerEvents: "none", position: "absolute", width: `${tool.width * (cellW + GAP) - GAP - 8}px`, left: "4px", textTransform: "uppercase", letterSpacing: "0.1em" }}>Cattedra</span>)}
+                    </div>);
+                  })}
+                </div>
+              </div>
+              <div style={{ marginTop: "16px", display: "flex", flexDirection: "column", alignItems: "center", gap: "8px" }}>
+                {!hasCattedra && <p style={{ fontSize: "12px", color: "#fbbf24" }}>⚠ Posiziona la cattedra</p>}
+                {hasCattedra && !seatsOk && <p style={{ fontSize: "12px", color: "#fbbf24" }}>⚠ Servono almeno {datiClasse.numAlunni} posti ({totalSeats} posizionati)</p>}
+                {hasCattedra && seatsOk && (<button onClick={() => onComplete(desks)} style={{ padding: "10px 24px", borderRadius: "12px", color: "#fff", fontWeight: 600, fontSize: "14px", background: "linear-gradient(135deg, #f59e0b, #d97706)", border: "none", cursor: "pointer", boxShadow: "0 4px 14px rgba(245,158,11,0.4)" }}>Continua → Gestisci alunni</button>)}
+              </div>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    // ============================================================
+    // AssegnaPosti (invariato dal codice dell'utente)
+    // ============================================================
+    function AssegnaPosti({ datiClasse, desks, onBack }) {
+      const [alunni, setAlunni] = useState([]); const [assegnazioni, setAssegnazioni] = useState({});
+      const [nome, setNome] = useState(""); const [cognome, setCognome] = useState(""); const [error, setError] = useState(""); const [importMsg, setImportMsg] = useState("");
+      const fileInputRef = useRef(null); const [draggingAlunno, setDraggingAlunno] = useState(null);
+      const gridContainerRef = useRef(null);
+      const { w: cellW, h: cellH } = useCellDimensions(gridContainerRef);
+      const [exporting, setExporting] = useState(false);
+      const formattaTesto = (str) => { if (!str) return ""; return str.trim().toLowerCase().replace(/(?:^|[\s'])([a-zàèéìòù])/g, match => match.toUpperCase()); };
+
+      const exportPDF = async () => {
+        setExporting(true);
+        try {
+          const printDiv = document.createElement("div");
+          const pCellW = 120; const pCellH = 80; const pGap = 5;
+          const totalW = GRID_COLS * (pCellW + pGap) - pGap; const totalH = GRID_ROWS * (pCellH + pGap) - pGap;
+          const divW = totalW + 80;
+          printDiv.style.cssText = `position:absolute;left:-9999px;top:0;width:${divW}px;background:#fff;padding:30px 40px;font-family:'Segoe UI',sans-serif;`;
+          const header = document.createElement("div");
+          header.style.cssText = "text-align:center;margin-bottom:20px;border-bottom:2px solid #334155;padding-bottom:14px;";
+          header.innerHTML = `<div style="font-size:26px;font-weight:700;color:#1e293b;margin-bottom:4px;">Piantina Classe ${datiClasse.classe}ª ${datiClasse.sezione}</div><div style="font-size:15px;color:#64748b;">${datiClasse.indirizzo} — A.S. ${datiClasse.annoScolastico}</div><div style="font-size:13px;color:#94a3b8;margin-top:4px;">${alunni.length} alunni</div>`;
+          printDiv.appendChild(header);
+          const gridContainer = document.createElement("div");
+          gridContainer.style.cssText = `position:relative;width:${totalW}px;height:${totalH}px;margin:0 auto;overflow:visible;`;
+          desks.forEach((d) => {
+            const t = TOOLS[d.type]; const isCat = d.type === "cattedra";
+            const x = d.col * (pCellW + pGap); const y = d.row * (pCellH + pGap);
+            const w = t.width * (pCellW + pGap) - pGap; const h = t.height * (pCellH + pGap) - pGap;
+            if (isCat) {
+              const catEl = document.createElement("div");
+              catEl.style.cssText = `position:absolute;left:${x}px;top:${y}px;width:${w}px;height:${h}px;background:#ddd6fe;border:2px solid #a78bfa;border-radius:8px;display:flex;align-items:center;justify-content:center;`;
+              catEl.innerHTML = `<span style="font-size:${Math.round(pCellH*0.35)}px;font-weight:700;color:#5b21b6;text-transform:uppercase;letter-spacing:0.1em;">Cattedra</span>`;
+              gridContainer.appendChild(catEl);
+            } else {
+              for (let s = 0; s < t.seats; s++) {
+                const seatKey = `${d.id}-${s}`; const sx = (d.col + s) * (pCellW + pGap); const sy = d.row * (pCellH + pGap);
+                const ass = assegnazioni[seatKey]; const al = ass ? alunni.find((a) => a.id === ass.alunnoId) : null;
+                const isLeft = s === 0; const isRight = s === t.seats - 1;
+                const br = `${isLeft ? "8px" : "0"} ${isRight ? "8px" : "0"} ${isRight ? "8px" : "0"} ${isLeft ? "8px" : "0"}`;
+                const seatEl = document.createElement("div");
+                seatEl.style.cssText = `position:absolute;left:${sx}px;top:${sy}px;width:${pCellW}px;height:${pCellH}px;background:#e0f2fe;border:1.5px solid #38bdf8;border-radius:${br};display:flex;align-items:center;justify-content:center;`;
+                if (al) {
+                  const fCog = Math.round(calcolaDimensioneTesto(al.cognome, pCellW, pCellH, 0.22, true));
+                  const fNom = Math.round(calcolaDimensioneTesto(al.nome, pCellW, pCellH, 0.16, false));
+                  seatEl.innerHTML = `<div style="text-align:center;line-height:1.3;padding:2px;width:100%;"><div style="font-size:${fCog}px;font-weight:700;color:#0f172a;max-width:${pCellW-4}px;margin:0 auto;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${al.cognome}</div>${al.nome ? `<div style="font-size:${fNom}px;color:#475569;margin-top:1px;max-width:${pCellW-4}px;margin:0 auto;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${al.nome}</div>` : ''}</div>`;
+                } else {
+                  seatEl.innerHTML = `<span style="font-size:${Math.round(pCellH*0.2)}px;color:#94a3b8;">—</span>`;
+                }
+                gridContainer.appendChild(seatEl);
+              }
+            }
+          });
+          printDiv.appendChild(gridContainer);
+          const footer = document.createElement("div");
+          footer.style.cssText = "text-align:center;margin-top:20px;border-top:1px solid #e2e8f0;padding-top:10px;";
+          footer.innerHTML = `<span style="font-size:10px;color:#94a3b8;">Generata il ${new Date().toLocaleDateString("it-IT")}</span>`;
+          printDiv.appendChild(footer);
+          document.body.appendChild(printDiv);
+          const canvas = await html2canvas(printDiv, { scale: 2, useCORS: true, backgroundColor: "#ffffff" });
+          const imgData = canvas.toDataURL("image/jpeg", 0.7);
+          const { jsPDF } = window.jspdf;
+          const pdf = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
+          const pdfW = pdf.internal.pageSize.getWidth(); const pdfH = pdf.internal.pageSize.getHeight();
+          const imgRatio = canvas.width / canvas.height;
+          const marginLR = 30; const marginTB = 10;
+          let imgW = pdfW - marginLR * 2; let imgH = imgW / imgRatio;
+          if (imgH > pdfH - marginTB * 2) { imgH = pdfH - marginTB * 2; imgW = imgH * imgRatio; }
+          const x = (pdfW - imgW) / 2; const y = (pdfH - imgH) / 2;
+          pdf.addImage(imgData, "JPEG", x, y, imgW, imgH);
+          pdf.save(`Piantina_${datiClasse.classe}${datiClasse.sezione}_${datiClasse.annoScolastico.replace("/","_")}.pdf`);
+          document.body.removeChild(printDiv);
+        } catch (err) { console.error("Errore export PDF:", err); alert("Errore durante l'esportazione PDF."); }
+        setExporting(false);
+      };
+
+      const seats = useMemo(() => { const list = []; desks.forEach((d) => { const t = TOOLS[d.type]; if (t.seats === 0) return; for (let s = 0; s < t.seats; s++) list.push({ deskId: d.id, seatIndex: s, key: `${d.id}-${s}`, row: d.row, col: d.col + s }); }); return list; }, [desks]);
+      const alunniOrd = useMemo(() => [...alunni].sort((a, b) => a.cognome.localeCompare(b.cognome) || a.nome.localeCompare(b.nome)), [alunni]);
+      const assignedIds = useMemo(() => new Set(Object.values(assegnazioni).map((a) => a.alunnoId)), [assegnazioni]);
+      const nonAssegnati = useMemo(() => alunniOrd.filter((a) => !assignedIds.has(a.id)), [alunniOrd, assignedIds]);
+
+      const addAlunno = () => { const n = formattaTesto(nome), c = formattaTesto(cognome); if (!c) { setError("Inserisci almeno il cognome"); return; } if (alunni.length >= datiClasse.numAlunni) { setError(`Massimo ${datiClasse.numAlunni}`); return; } if (alunni.some((a) => a.cognome.toLowerCase() === c.toLowerCase() && a.nome.toLowerCase() === n.toLowerCase())) { setError("Già presente"); return; } setAlunni((p) => [...p, { id: Date.now(), nome: n, cognome: c }]); setNome(""); setCognome(""); setError(""); };
+      const removeAlunno = (id) => { setAlunni((p) => p.filter((a) => a.id !== id)); setAssegnazioni((p) => { const n = { ...p }; Object.keys(n).forEach((k) => { if (n[k].alunnoId === id) delete n[k]; }); return n; }); };
+      const handleFileImport = async (e) => { const file = e.target.files?.[0]; if (!file) return; setImportMsg(""); setError(""); const ext = file.name.split(".").pop().toLowerCase(); try { if (ext === "csv" || ext === "txt") { const text = await file.text(); processRows(Papa.parse(text, { header: false, skipEmptyLines: true }).data); } else if (ext === "xlsx" || ext === "xls") { const wb = XLSX.read(await file.arrayBuffer(), { type: "array" }); processRows(XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1 })); } else setError("Formato non supportato."); } catch { setError("Errore lettura file."); } if (fileInputRef.current) fileInputRef.current.value = ""; };
+      const processRows = (rows) => { if (!rows?.length) { setError("File vuoto"); return; } let startIdx = 0; const fh = String(rows[0]?.[0] || "").toLowerCase().trim(); if (["cognome","surname","last_name","lastname","nome","name"].includes(fh)) startIdx = 1; let cogIdx = 0, nomeIdx = 1; if (["nome","name","first_name","firstname"].includes(fh)) { nomeIdx = 0; cogIdx = 1; } const newA = []; let skipped = 0; for (let i = startIdx; i < rows.length; i++) { const r = rows[i]; if (!r?.length) continue; let c, n; if (r.length === 1) { const p = String(r[0]).trim().split(/\s+/); c = formattaTesto(p[0]); n = formattaTesto(p.slice(1).join(" ")); } else { c = formattaTesto(String(r[cogIdx] || "")); n = formattaTesto(String(r[nomeIdx] || "")); } if (!c && !n) continue; if (!c) { c = n; n = ""; } if ([...alunni, ...newA].some((a) => a.cognome.toLowerCase() === c.toLowerCase() && a.nome.toLowerCase() === n.toLowerCase())) { skipped++; continue; } if (alunni.length + newA.length >= datiClasse.numAlunni) { skipped += rows.length - i; break; } newA.push({ id: Date.now() + i, nome: n, cognome: c }); } setAlunni((p) => [...p, ...newA]); setImportMsg(`${newA.length} importati${skipped ? ` (${skipped} saltati)` : ""}`); };
+
+      const assegnaRandomNuovi = () => { const liberi = seats.filter((s) => !assegnazioni[s.key]).map((s) => s.key).sort(() => Math.random() - 0.5); const nuove = { ...assegnazioni }; nonAssegnati.forEach((a, i) => { if (i < liberi.length) nuove[liberi[i]] = { alunnoId: a.id, locked: false }; }); setAssegnazioni(nuove); };
+      const randomizzaSbloccati = () => { const sbl = Object.entries(assegnazioni).filter(([, v]) => !v.locked); if (sbl.length < 2) return; const ids = sbl.map(([, v]) => v.alunnoId).sort(() => Math.random() - 0.5); const nuove = { ...assegnazioni }; sbl.forEach(([key], i) => { nuove[key] = { alunnoId: ids[i], locked: false }; }); setAssegnazioni(nuove); };
+      const toggleLock = (sk) => { if (!assegnazioni[sk]) return; setAssegnazioni((p) => ({ ...p, [sk]: { ...p[sk], locked: !p[sk].locked } })); };
+      const rimuoviAssegnazione = (sk) => { setAssegnazioni((p) => { const n = { ...p }; delete n[sk]; return n; }); };
+      const handleDrop = (sk) => { if (draggingAlunno && !assegnazioni[sk]) setAssegnazioni((p) => ({ ...p, [sk]: { alunnoId: draggingAlunno, locked: false } })); setDraggingAlunno(null); };
+
+      const occupiedMap = useMemo(() => { const map = {}; desks.forEach((d) => { const t = TOOLS[d.type]; for (let c = 0; c < t.width; c++) for (let r = 0; r < t.height; r++) map[`${d.row+r},${d.col+c}`] = d.id; }); return map; }, [desks]);
+      const getAlunno = (id) => alunni.find((a) => a.id === id);
+      const totAssegnati = Object.keys(assegnazioni).length; const totBloccati = Object.values(assegnazioni).filter((a) => a.locked).length; const numSbloccati = Object.entries(assegnazioni).filter(([, v]) => !v.locked).length;
+      const panelBtn = (bg, col, dis) => ({ width: "100%", marginBottom: "6px", padding: "7px", borderRadius: "8px", fontSize: "12px", fontWeight: 600, background: dis ? "#1a1a2e" : bg, color: dis ? "#475569" : col, border: "none", cursor: dis ? "not-allowed" : "pointer" });
+
+      return (
+        <div style={PAGE_STYLE}>
+          <Header onBack={onBack} backLabel="Editor" title={`👥 Assegna Posti — ${datiClasse.classe}ª ${datiClasse.sezione}`} badge={`${totAssegnati}/${alunni.length} assegnati`} badgeOk={totAssegnati === alunni.length && alunni.length > 0} />
+          <div style={{ display: "flex", gap: "16px", padding: "16px", flex: 1, overflow: "hidden" }}>
+            <div style={{ width: "250px", flexShrink: 0, overflowY: "auto" }}>
+              <div style={{ ...PANEL_STYLE, borderRadius: "12px", padding: "14px", marginBottom: "10px" }}>
+                <h3 style={{ fontSize: "13px", fontWeight: 600, color: "#cbd5e1", marginBottom: "8px" }}>✏️ Aggiungi alunno</h3>
+                <input type="text" value={cognome} onChange={(e) => { setCognome(e.target.value); setError(""); }} onKeyDown={(e) => e.key === "Enter" && addAlunno()} placeholder="Cognome *" style={{ width: "100%", padding: "6px 8px", borderRadius: "6px", fontSize: "12px", color: "#fff", marginBottom: "6px", background: "#0f172a", border: "1.5px solid #334155", outline: "none" }} />
+                <input type="text" value={nome} onChange={(e) => { setNome(e.target.value); setError(""); }} onKeyDown={(e) => e.key === "Enter" && addAlunno()} placeholder="Nome" style={{ width: "100%", padding: "6px 8px", borderRadius: "6px", fontSize: "12px", color: "#fff", marginBottom: "6px", background: "#0f172a", border: "1.5px solid #334155", outline: "none" }} />
+                {error && <p style={{ color: "#f87171", fontSize: "11px", marginBottom: "4px" }}>{error}</p>}
+                <button onClick={addAlunno} disabled={alunni.length >= datiClasse.numAlunni} style={panelBtn("#0284c7", "#fff", alunni.length >= datiClasse.numAlunni)}>+ Aggiungi</button>
+              </div>
+              <div style={{ ...PANEL_STYLE, borderRadius: "12px", padding: "14px", marginBottom: "10px" }}>
+                <h3 style={{ fontSize: "13px", fontWeight: 600, color: "#cbd5e1", marginBottom: "6px" }}>📂 Importa</h3>
+                <input type="file" ref={fileInputRef} accept=".csv,.txt,.xls,.xlsx" onChange={handleFileImport} style={{ display: "none" }} />
+                <button onClick={() => fileInputRef.current?.click()} style={{ width: "100%", padding: "7px", borderRadius: "8px", fontSize: "12px", fontWeight: 600, background: "#0f172a", color: "#f59e0b", border: "1px solid #334155", cursor: "pointer" }}>📄 Scegli file</button>
+                {importMsg && <p style={{ color: "#a7f3d0", fontSize: "11px", marginTop: "6px" }}>{importMsg}</p>}
+              </div>
+              <div style={{ ...PANEL_STYLE, borderRadius: "12px", padding: "14px", marginBottom: "10px" }}>
+                <h3 style={{ fontSize: "13px", fontWeight: 600, color: "#cbd5e1", marginBottom: "8px" }}>🎲 Assegnazione</h3>
+                <button onClick={assegnaRandomNuovi} disabled={nonAssegnati.length === 0} style={panelBtn("#0d9488", "#fff", nonAssegnati.length === 0)}>🎲 Assegna non assegnati</button>
+                <button onClick={randomizzaSbloccati} disabled={numSbloccati < 2} style={panelBtn("#7c3aed", "#fff", numSbloccati < 2)}>🔀 Mescola sbloccati</button>
+              </div>
+              <div style={{ ...PANEL_STYLE, borderRadius: "12px", padding: "14px" }}>
+                <h3 style={{ fontSize: "13px", fontWeight: 600, color: "#cbd5e1", marginBottom: "8px" }}>📋 Non assegnati ({nonAssegnati.length})</h3>
+                <div style={{ maxHeight: "200px", overflowY: "auto" }}>
+                  {nonAssegnati.map((a) => (
+                    <div key={a.id} style={{ display: "flex", alignItems: "center", gap: "4px", padding: "4px 6px", borderRadius: "4px", marginBottom: "2px", fontSize: "11px", background: "#0f172a", cursor: "grab" }} draggable onDragStart={() => setDraggingAlunno(a.id)} onDragEnd={() => setDraggingAlunno(null)}>
+                      <span style={{ color: "#fff", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{a.cognome} {a.nome}</span>
+                      <button onClick={() => removeAlunno(a.id)} style={{ background: "none", border: "none", color: "#ef4444", cursor: "pointer", fontSize: "10px" }}>✕</button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+              {totAssegnati > 0 && (
+                <button onClick={exportPDF} disabled={exporting} style={{ width: "100%", marginTop: "10px", padding: "10px", borderRadius: "10px", fontWeight: 600, fontSize: "13px", background: exporting ? "#475569" : "linear-gradient(135deg, #f59e0b, #d97706)", color: "#fff", border: "none", cursor: exporting ? "wait" : "pointer", boxShadow: exporting ? "none" : "0 4px 14px rgba(245,158,11,0.4)" }}>
+                  {exporting ? "⏳ Generazione..." : "📄 Scarica PDF"}
+                </button>
+              )}
+            </div>
+            <div ref={gridContainerRef} style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", alignItems: "center" }}>
+              <div style={{ borderRadius: "12px", padding: `${GRID_PADDING}px`, background: "#0f172a", border: "1px solid #1e293b", flex: 1, display: "flex", alignItems: "center", justifyContent: "center", width: "100%" }}>
+                <div style={{ display: "grid", gridTemplateColumns: `repeat(${GRID_COLS}, ${cellW}px)`, gridTemplateRows: `repeat(${GRID_ROWS}, ${cellH}px)`, gap: `${GAP}px` }}>
+                  {Array.from({ length: GRID_ROWS * GRID_COLS }).map((_, idx) => {
+                    const row = Math.floor(idx / GRID_COLS), col = idx % GRID_COLS, key = `${row},${col}`;
+                    const dId = occupiedMap[key]; const desk = dId ? desks.find((d) => d.id === dId) : null;
+                    const isOrig = desk && desk.row === row && desk.col === col; const tool = desk ? TOOLS[desk.type] : null; const isCat = desk?.type === "cattedra";
+                    const seat = seats.find((s) => s.row === row && s.col === col);
+                    const assegnazione = seat ? assegnazioni[seat.key] : null; const alunno = assegnazione ? getAlunno(assegnazione.alunnoId) : null;
+                    const isLocked = assegnazione?.locked;
+                    const fCogUI = alunno ? calcolaDimensioneTesto(alunno.cognome, cellW, cellH, 0.18, true) : 10;
+                    const fNomUI = alunno ? calcolaDimensioneTesto(alunno.nome, cellW, cellH, 0.14, false) : 10;
+                    let bg = "#1a2332", bd = "1px solid #1e293b";
+                    if (dId && tool) { bg = isCat ? "#5b21b6" : "#075985"; bd = `1px solid ${isCat ? "#7c3aed" : "#0284c7"}`; }
+                    if (seat && draggingAlunno && !assegnazione) { bg = "#0c4a6e"; bd = "1.5px dashed #38bdf8"; }
+                    let br = "4px"; if (desk && tool) { const L = col === desk.col, R = col === desk.col + tool.width - 1; br = `${L?"8px":"0"} ${R?"8px":"0"} ${R?"8px":"0"} ${L?"8px":"0"}`; }
+                    return (<div key={key} title={alunno ? `${alunno.cognome} ${alunno.nome}` : undefined} onDragOver={(e) => { if (seat && !assegnazione) e.preventDefault(); }} onDrop={() => seat && handleDrop(seat.key)} style={{ width: cellW, height: cellH, background: bg, border: bd, borderRadius: br, display: "flex", alignItems: "center", justifyContent: "center", position: "relative", transition: "all 0.12s", zIndex: isOrig && isCat ? 5 : 1 }}>
+                      {isOrig && isCat && (<span style={{ fontSize: `${Math.max(11, cellH * 0.25)}px`, fontWeight: 600, color: "#e2e8f0", textTransform: "uppercase", letterSpacing: "0.1em", pointerEvents: "none", position: "absolute", width: `${tool.width * (cellW + GAP) - GAP - 8}px`, left: "4px", textAlign: "center" }}>Cattedra</span>)}
+                      {seat && alunno && (
+                        <React.Fragment>
+                          <button onClick={(e) => { e.stopPropagation(); rimuoviAssegnazione(seat.key); }} style={{ position: "absolute", top: "1px", left: "1px", width: `${Math.max(16, cellH*0.25)}px`, height: `${Math.max(16, cellH*0.25)}px`, borderRadius: "4px", border: "none", background: "rgba(239,68,68,0.8)", color: "#fff", fontSize: `${Math.max(8, cellH*0.14)}px`, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", padding: 0, lineHeight: 1, zIndex: 2 }} title="Rimuovi dal banco">✕</button>
+                          <button onClick={(e) => { e.stopPropagation(); toggleLock(seat.key); }} style={{ position: "absolute", top: "1px", right: "1px", width: `${Math.max(16, cellH*0.25)}px`, height: `${Math.max(16, cellH*0.25)}px`, borderRadius: "4px", border: "none", background: isLocked ? "rgba(251,191,36,0.9)" : "rgba(100,116,139,0.5)", color: "#fff", fontSize: `${Math.max(8, cellH*0.13)}px`, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", padding: 0, lineHeight: 1, zIndex: 2 }} title={isLocked ? "Sblocca" : "Blocca posizione"}>{isLocked ? "🔒" : "🔓"}</button>
+                          <div style={{ pointerEvents: "none", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", marginTop: `${Math.max(8, cellH*0.12)}px`, width: "100%", padding: "0 4px", overflow: "hidden" }}>
+                            <span style={{ fontSize: `${fCogUI}px`, fontWeight: 700, color: "#fff", lineHeight: 1.2, textAlign: "center", maxWidth: cellW - 4, textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{alunno.cognome}</span>
+                            {alunno.nome && <span style={{ fontSize: `${fNomUI}px`, color: "#94a3b8", lineHeight: 1, marginTop: "2px", maxWidth: cellW - 4, textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{alunno.nome}</span>}
+                          </div>
+                        </React.Fragment>
+                      )}
+                      {seat && !alunno && !isCat && <span style={{ fontSize: "10px", color: "#334155" }}>—</span>}
+                    </div>);
+                  })}
+                </div>
+              </div>
+              <div style={{ ...PANEL_STYLE, borderRadius: "8px", padding: "8px 16px", marginTop: "12px", maxWidth: "500px", textAlign: "center" }}>
+                <p style={{ fontSize: "12px", color: "#94a3b8" }}>Trascina alunno sul banco · ✕ rimuove · 🔒 blocca/sblocca</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    // ============================================================
+    // App
+    // ============================================================
+    function App() {
+      const [fase, setFase] = useState("setup");
+      const [datiClasse, setDatiClasse] = useState(null);
+      const [pianta, setPianta] = useState(null);
+      const [showGuida, setShowGuida] = useState(false);
+      return (
+        <div style={{ display: "flex", flexDirection: "column", minHeight: "100vh" }}>
+          {fase === "setup" && <SetupClasse onComplete={(d) => { setDatiClasse(d); setFase("editor"); }} onGuida={() => setShowGuida(true)} />}
+          {fase === "editor" && <EditorPiantina datiClasse={datiClasse} onBack={() => setFase("setup")} onComplete={(d) => { setPianta(d); setFase("assegna"); }} />}
+          {fase === "assegna" && <AssegnaPosti datiClasse={datiClasse} desks={pianta} onBack={() => setFase("editor")} />}
+          {showGuida && <Guida onClose={() => setShowGuida(false)} />}
+        </div>
+      );
+    }
+
+    ReactDOM.render(<App />, document.getElementById("root"));
+  </script>
+</body>
+</html>
