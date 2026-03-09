@@ -108,21 +108,6 @@
         return json;
       }
 
-      // Con "Esegui come: utente che accede" e "Solo organizzazione":
-      // - utente org loggato  → risponde JSON {ok:true}  → true
-      // - utente esterno      → redirect al login Google → risposta HTML → JSON.parse fallisce → false
-      async function verificaAccesso() {
-        try {
-          const url = SCRIPT_URL + "?action=ping";
-          const res = await fetch(url, { redirect: "follow" });
-          const text = await res.text();
-          const json = JSON.parse(text);
-          return json.ok === true;
-        } catch {
-          return false;
-        }
-      }
-
       async function caricaLista() {
         return (await chiamaScript({ action: "lista" })).files || [];
       }
@@ -140,7 +125,7 @@
         return await chiamaScript({ action: "elimina", id: fileId });
       }
 
-      return { verificaAccesso, caricaLista, carica, salva, elimina };
+      return { caricaLista, carica, salva, elimina };
     }
 
     // ============================================================
@@ -479,7 +464,7 @@
     // ============================================================
     // SetupClasse
     // ============================================================
-    function SetupClasse({ onComplete, onGuida, drive, onCaricaDaDrive, isOrgUser }) {
+    function SetupClasse({ onComplete, onGuida, drive, onCaricaDaDrive }) {
       const [formData, setFormData] = useState({ annoScolastico: ANNI_SCOLASTICI[1], classe: "1", sezione: "A", indirizzo: "", numAlunni: 20 });
       const [errors, setErrors] = useState({});
       
@@ -548,10 +533,8 @@
                 Continua → Posiziona i banchi
               </button>
             </div>
-            {/* Drive nella schermata Setup — solo org */}
-            {isOrgUser && (
-              <DrivePanelSetup drive={drive} onCaricaDaDrive={onCaricaDaDrive} />
-            )}
+            {/* Drive — caricamento configurazioni */}
+            <DrivePanelSetup drive={drive} onCaricaDaDrive={onCaricaDaDrive} />
 
             <div style={{ textAlign: "center", marginTop: "20px" }}>
               <button onClick={onGuida} style={{ background: "none", border: "1px solid #475569", borderRadius: "10px",
@@ -672,7 +655,7 @@
     // ============================================================
     // AssegnaPosti
     // ============================================================
-    function AssegnaPosti({ datiClasse, desks, onBack, drive, alunniIniziali, assegnazioniIniziali, isOrgUser }) {
+    function AssegnaPosti({ datiClasse, desks, onBack, drive, alunniIniziali, assegnazioniIniziali }) {
       const [alunni, setAlunni]             = useState(alunniIniziali || []);
       const [assegnazioni, setAssegnazioni] = useState(assegnazioniIniziali || {});
       const [nome, setNome] = useState(""); const [cognome, setCognome] = useState(""); const [error, setError] = useState(""); const [importMsg, setImportMsg] = useState("");
@@ -794,14 +777,12 @@
           <div style={{ display: "flex", gap: "16px", padding: "16px", flex: 1, overflow: "hidden" }}>
             <div style={{ width: "250px", flexShrink: 0, overflowY: "auto" }}>
 
-              {/* ── Pannello Drive — solo org ── */}
-              {isOrgUser && (
-                <DrivePanel
-                  drive={drive}
-                  datiDaSalvare={datiDaSalvare}
-                  nomeFileSuggerito={nomeFileSuggerito}
-                />
-              )}
+              {/* ── Pannello Drive ── */}
+              <DrivePanel
+                drive={drive}
+                datiDaSalvare={datiDaSalvare}
+                nomeFileSuggerito={nomeFileSuggerito}
+              />
 
               <div style={{ ...PANEL_STYLE, borderRadius: "12px", padding: "14px", marginBottom: "10px" }}>
                 <h3 style={{ fontSize: "13px", fontWeight: 600, color: "#cbd5e1", marginBottom: "8px" }}>✏️ Aggiungi alunno</h3>
@@ -891,16 +872,8 @@
       const [assegIniziali, setAssegIniz]     = useState({});
       const [showGuida, setShowGuida]         = useState(false);
 
-      const [isOrgUser, setIsOrgUser] = useState(false);
-
       // Drive istanziato a livello App e condiviso tra tutte le fasi
       const drive = useDriveSync();
-
-      useEffect(() => {
-        drive.verificaAccesso()
-          .then(ok => setIsOrgUser(ok))
-          .catch(() => setIsOrgUser(false));
-      }, []);
 
       // Caricamento completo da Drive — alunni e assegnazioni inclusi
       function handleCaricaDaDrive(dati) {
@@ -926,7 +899,6 @@
               onGuida={() => setShowGuida(true)}
               drive={drive}
               onCaricaDaDrive={handleCaricaDaDrive}
-              isOrgUser={isOrgUser}
             />
           )}
           {fase === "editor" && (
@@ -944,7 +916,6 @@
               assegnazioniIniziali={assegIniziali}
               onBack={() => setFase("editor")}
               drive={drive}
-              isOrgUser={isOrgUser}
             />
           )}
           {showGuida && <Guida onClose={() => setShowGuida(false)} />}
