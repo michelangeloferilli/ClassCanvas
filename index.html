@@ -108,6 +108,21 @@
         return json;
       }
 
+      // Ritorna true se l'utente è loggato con l'account scolastico.
+      // Con script impostato su "Chiunque nell'organizzazione":
+      // - account org → risponde JSON {ok:true} → true
+      // - account esterno → redirect a login → risposta HTML → JSON.parse fallisce → false
+      async function verificaAccesso() {
+        try {
+          const url = SCRIPT_URL + "?action=ping";
+          const res = await fetch(url, { redirect: "follow" });
+          const json = await res.json();
+          return json.ok === true;
+        } catch {
+          return false;
+        }
+      }
+
       async function caricaLista() {
         return (await chiamaScript({ action: "lista" })).files || [];
       }
@@ -125,7 +140,7 @@
         return await chiamaScript({ action: "elimina", id: fileId });
       }
 
-      return { caricaLista, carica, salva, elimina };
+      return { verificaAccesso, caricaLista, carica, salva, elimina };
     }
 
     // ============================================================
@@ -1005,7 +1020,9 @@
 
       // Verifica se l'utente è dell'organizzazione al primo caricamento
       useEffect(() => {
-        drive.verificaAccesso().then(ok => setIsOrgUser(ok));
+        drive.verificaAccesso()
+          .then(ok => setIsOrgUser(ok))
+          .catch(() => setIsOrgUser(false));
       }, []);
 
       // Caricamento completo da Drive — funziona da qualsiasi fase
