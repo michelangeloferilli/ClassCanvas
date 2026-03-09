@@ -486,9 +486,102 @@
     }
 
     // ============================================================
+    // DrivePanelSetup — pannello di caricamento nella schermata Setup
+    // ============================================================
+    function DrivePanelSetup({ drive, onCaricaDaDrive }) {
+      const [lista, setLista]   = useState([]);
+      const [aperto, setAperto] = useState(false);
+      const [busy, setBusy]     = useState(false);
+      const [msg, setMsg]       = useState(null);
+
+      function mostra(testo, tipo = "ok") {
+        setMsg({ testo, tipo });
+        setTimeout(() => setMsg(null), 4000);
+      }
+
+      async function handleApri() {
+        const nuovoStato = !aperto;
+        setAperto(nuovoStato);
+        if (nuovoStato && lista.length === 0) {
+          setBusy(true);
+          try { setLista(await drive.caricaLista()); }
+          catch (e) { mostra("Errore: " + e.message, "errore"); }
+          finally { setBusy(false); }
+        }
+      }
+
+      async function handleCarica(file) {
+        setBusy(true);
+        try {
+          const dati = await drive.carica(file.id);
+          onCaricaDaDrive(dati);
+        } catch (e) {
+          mostra("Errore caricamento: " + e.message, "errore");
+          setBusy(false);
+        }
+      }
+
+      return (
+        <div style={{ marginTop: "16px" }}>
+          <button
+            onClick={handleApri}
+            disabled={busy}
+            style={{ width: "100%", padding: "10px", borderRadius: "12px", fontSize: "13px",
+              fontWeight: 600, border: "1px solid #475569", background: aperto ? "#334155" : "none",
+              color: "#94a3b8", cursor: "pointer", display: "flex", alignItems: "center",
+              justifyContent: "center", gap: "8px" }}
+          >
+            {busy ? "⏳ Caricamento…" : (aperto ? "▲ Chiudi" : "🗂️ Carica configurazione da Drive")}
+          </button>
+
+          {aperto && (
+            <div style={{ marginTop: "8px", background: "#1e293b", border: "1px solid #334155",
+              borderRadius: "12px", padding: "12px" }}>
+              {lista.length === 0 && !busy ? (
+                <p style={{ fontSize: "12px", color: "#64748b", textAlign: "center" }}>Nessun file salvato</p>
+              ) : (
+                <div style={{ display: "flex", flexDirection: "column", gap: "4px", maxHeight: "200px", overflowY: "auto" }}>
+                  {lista.map(f => {
+                    const data = new Date(f.modifiedTime).toLocaleDateString("it-IT", { day: "2-digit", month: "2-digit", year: "2-digit" });
+                    return (
+                      <button
+                        key={f.id}
+                        onClick={() => handleCarica(f)}
+                        disabled={busy}
+                        style={{ display: "flex", alignItems: "center", gap: "8px", padding: "8px 10px",
+                          borderRadius: "8px", border: "1px solid #334155", background: "#0f172a",
+                          color: "#e2e8f0", cursor: "pointer", textAlign: "left", fontSize: "13px",
+                          width: "100%" }}
+                        onMouseEnter={e => e.currentTarget.style.borderColor = "#f59e0b"}
+                        onMouseLeave={e => e.currentTarget.style.borderColor = "#334155"}
+                      >
+                        <span>📄</span>
+                        <span style={{ flex: 1, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                          {f.name.replace(".json", "")}
+                        </span>
+                        <span style={{ fontSize: "11px", color: "#64748b", whiteSpace: "nowrap" }}>{data}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+              {msg && (
+                <div style={{ marginTop: "8px", padding: "7px", borderRadius: "6px", fontSize: "12px",
+                  background: msg.tipo === "ok" ? "#0d3321" : "#3b0c0c",
+                  color: msg.tipo === "ok" ? "#6ee7b7" : "#fca5a5" }}>
+                  {msg.testo}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    // ============================================================
     // SetupClasse
     // ============================================================
-    function SetupClasse({ onComplete, onGuida }) {
+    function SetupClasse({ onComplete, onGuida, isOrgUser, drive, onCaricaDaDrive }) {
       const [formData, setFormData] = useState({ annoScolastico: ANNI_SCOLASTICI[1], classe: "1", sezione: "A", indirizzo: "", numAlunni: 20 });
       const [errors, setErrors] = useState({});
       
@@ -681,7 +774,7 @@
     // ============================================================
     // AssegnaPosti
     // ============================================================
-    function AssegnaPosti({ datiClasse, desks, onBack, onCaricaDaDrive }) {
+    function AssegnaPosti({ datiClasse, desks, onBack, onCaricaDaDrive, drive, isOrgUser }) {
       const [alunni, setAlunni] = useState([]);
       const [assegnazioni, setAssegnazioni] = useState({});
       const [nome, setNome] = useState(""); const [cognome, setCognome] = useState(""); const [error, setError] = useState(""); const [importMsg, setImportMsg] = useState("");
@@ -893,99 +986,6 @@
               </div>
             </div>
           </div>
-        </div>
-      );
-    }
-
-    // ============================================================
-    // DrivePanelSetup — pannello di caricamento nella schermata Setup
-    // ============================================================
-    function DrivePanelSetup({ drive, onCaricaDaDrive }) {
-      const [lista, setLista]   = useState([]);
-      const [aperto, setAperto] = useState(false);
-      const [busy, setBusy]     = useState(false);
-      const [msg, setMsg]       = useState(null);
-
-      function mostra(testo, tipo = "ok") {
-        setMsg({ testo, tipo });
-        setTimeout(() => setMsg(null), 4000);
-      }
-
-      async function handleApri() {
-        const nuovoStato = !aperto;
-        setAperto(nuovoStato);
-        if (nuovoStato && lista.length === 0) {
-          setBusy(true);
-          try { setLista(await drive.caricaLista()); }
-          catch (e) { mostra("Errore: " + e.message, "errore"); }
-          finally { setBusy(false); }
-        }
-      }
-
-      async function handleCarica(file) {
-        setBusy(true);
-        try {
-          const dati = await drive.carica(file.id);
-          onCaricaDaDrive(dati);
-        } catch (e) {
-          mostra("Errore caricamento: " + e.message, "errore");
-          setBusy(false);
-        }
-      }
-
-      return (
-        <div style={{ marginTop: "16px" }}>
-          <button
-            onClick={handleApri}
-            disabled={busy}
-            style={{ width: "100%", padding: "10px", borderRadius: "12px", fontSize: "13px",
-              fontWeight: 600, border: "1px solid #475569", background: aperto ? "#334155" : "none",
-              color: "#94a3b8", cursor: "pointer", display: "flex", alignItems: "center",
-              justifyContent: "center", gap: "8px" }}
-          >
-            {busy ? "⏳ Caricamento…" : (aperto ? "▲ Chiudi" : "🗂️ Carica configurazione da Drive")}
-          </button>
-
-          {aperto && (
-            <div style={{ marginTop: "8px", background: "#1e293b", border: "1px solid #334155",
-              borderRadius: "12px", padding: "12px" }}>
-              {lista.length === 0 && !busy ? (
-                <p style={{ fontSize: "12px", color: "#64748b", textAlign: "center" }}>Nessun file salvato</p>
-              ) : (
-                <div style={{ display: "flex", flexDirection: "column", gap: "4px", maxHeight: "200px", overflowY: "auto" }}>
-                  {lista.map(f => {
-                    const data = new Date(f.modifiedTime).toLocaleDateString("it-IT", { day: "2-digit", month: "2-digit", year: "2-digit" });
-                    return (
-                      <button
-                        key={f.id}
-                        onClick={() => handleCarica(f)}
-                        disabled={busy}
-                        style={{ display: "flex", alignItems: "center", gap: "8px", padding: "8px 10px",
-                          borderRadius: "8px", border: "1px solid #334155", background: "#0f172a",
-                          color: "#e2e8f0", cursor: "pointer", textAlign: "left", fontSize: "13px",
-                          width: "100%" }}
-                        onMouseEnter={e => e.currentTarget.style.borderColor = "#f59e0b"}
-                        onMouseLeave={e => e.currentTarget.style.borderColor = "#334155"}
-                      >
-                        <span>📄</span>
-                        <span style={{ flex: 1, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                          {f.name.replace(".json", "")}
-                        </span>
-                        <span style={{ fontSize: "11px", color: "#64748b", whiteSpace: "nowrap" }}>{data}</span>
-                      </button>
-                    );
-                  })}
-                </div>
-              )}
-              {msg && (
-                <div style={{ marginTop: "8px", padding: "7px", borderRadius: "6px", fontSize: "12px",
-                  background: msg.tipo === "ok" ? "#0d3321" : "#3b0c0c",
-                  color: msg.tipo === "ok" ? "#6ee7b7" : "#fca5a5" }}>
-                  {msg.testo}
-                </div>
-              )}
-            </div>
-          )}
         </div>
       );
     }
