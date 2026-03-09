@@ -655,9 +655,9 @@
     // ============================================================
     // AssegnaPosti
     // ============================================================
-    function AssegnaPosti({ datiClasse, desks, onBack, onCaricaDaDrive, drive }) {
-      const [alunni, setAlunni] = useState([]);
-      const [assegnazioni, setAssegnazioni] = useState({});
+    function AssegnaPosti({ datiClasse, desks, onBack, drive, alunniIniziali, assegnazioniIniziali }) {
+      const [alunni, setAlunni]             = useState(alunniIniziali || []);
+      const [assegnazioni, setAssegnazioni] = useState(assegnazioniIniziali || {});
       const [nome, setNome] = useState(""); const [cognome, setCognome] = useState(""); const [error, setError] = useState(""); const [importMsg, setImportMsg] = useState("");
       const fileInputRef = useRef(null); const [draggingAlunno, setDraggingAlunno] = useState(null);
       const gridContainerRef = useRef(null);
@@ -683,14 +683,7 @@
 
       // Quando si carica da Drive, ripristina alunni e assegnazioni locali
       // oppure segnala all'app di cambiare fase se serve
-      function handleCaricaDaDrive(dati) {
-        if (dati.alunni) setAlunni(dati.alunni);
-        if (dati.assegnazioni) setAssegnazioni(dati.assegnazioni);
-        // Se il file caricato ha datiClasse o desks diversi, delega all'App
-        if (onCaricaDaDrive && (dati.datiClasse || dati.desks)) {
-          onCaricaDaDrive(dati);
-        }
-      }
+
 
       const exportPDF = async () => {
         setExporting(true);
@@ -872,25 +865,37 @@
     // App
     // ============================================================
     function App() {
-      const [fase, setFase]             = useState("setup");
-      const [datiClasse, setDatiClasse] = useState(null);
-      const [pianta, setPianta]         = useState(null);
-      const [showGuida, setShowGuida]   = useState(false);
+      const [fase, setFase]                   = useState("setup");
+      const [datiClasse, setDatiClasse]       = useState(null);
+      const [pianta, setPianta]               = useState(null);
+      const [alunniIniziali, setAlunniIniz]   = useState([]);
+      const [assegIniziali, setAssegIniz]     = useState({});
+      const [showGuida, setShowGuida]         = useState(false);
+
       // Drive istanziato a livello App e condiviso tra tutte le fasi
       const drive = useDriveSync();
 
-      // Caricamento completo da Drive — funziona da qualsiasi fase
+      // Caricamento completo da Drive — alunni e assegnazioni inclusi
       function handleCaricaDaDrive(dati) {
         if (dati.datiClasse) setDatiClasse(dati.datiClasse);
-        if (dati.desks) setPianta(dati.desks);
+        if (dati.desks)      setPianta(dati.desks);
+        setAlunniIniz(dati.alunni      || []);
+        setAssegIniz(dati.assegnazioni || {});
         if (dati.datiClasse && dati.desks) setFase("assegna");
+      }
+
+      // Quando si va all'editor manualmente, resetta alunni e assegnazioni
+      function handleVaiEditor() {
+        setAlunniIniz([]);
+        setAssegIniz({});
+        setFase("editor");
       }
 
       return (
         <div style={{ display: "flex", flexDirection: "column", minHeight: "100vh" }}>
           {fase === "setup" && (
             <SetupClasse
-              onComplete={(d) => { setDatiClasse(d); setFase("editor"); }}
+              onComplete={(d) => { setDatiClasse(d); handleVaiEditor(); }}
               onGuida={() => setShowGuida(true)}
               drive={drive}
               onCaricaDaDrive={handleCaricaDaDrive}
@@ -907,8 +912,9 @@
             <AssegnaPosti
               datiClasse={datiClasse}
               desks={pianta}
+              alunniIniziali={alunniIniziali}
+              assegnazioniIniziali={assegIniziali}
               onBack={() => setFase("editor")}
-              onCaricaDaDrive={handleCaricaDaDrive}
               drive={drive}
             />
           )}
