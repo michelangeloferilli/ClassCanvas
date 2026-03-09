@@ -23,6 +23,11 @@
     const { useState, useMemo, useRef, useEffect, useCallback } = React;
 
     // ============================================================
+    // GOOGLE DRIVE — Apps Script URL
+    // ============================================================
+    const SCRIPT_URL = "https://script.google.com/a/macros/docenti.ipsgiordani.it/s/AKfycbzyfD_D5IO9rNuySjeKToGeuF6QM6xGh89_YKrE4Quks1gYqVW1f4oztKWkDMt2WiaNJQ/exec";
+
+    // ============================================================
     // CONFIGURAZIONE GLOBALE
     // ============================================================
     const MAX_STUDENTI = 30;
@@ -91,6 +96,230 @@
     }
 
     // ============================================================
+    // HOOK useDriveSync
+    // ============================================================
+    function useDriveSync() {
+      async function chiamaScript(params) {
+        const url = SCRIPT_URL + "?" + new URLSearchParams(params).toString();
+        const res = await fetch(url, { redirect: "follow", credentials: "include" });
+        if (!res.ok) throw new Error(`Errore HTTP: ${res.status}`);
+        const json = await res.json();
+        if (json.errore) throw new Error(json.errore);
+        return json;
+      }
+
+      async function caricaLista() {
+        return (await chiamaScript({ action: "lista" })).files || [];
+      }
+
+      async function carica(fileId) {
+        return await chiamaScript({ action: "carica", id: fileId });
+      }
+
+      async function salva(dati, nomeFile) {
+        const nome = nomeFile.endsWith(".json") ? nomeFile : nomeFile + ".json";
+        return await chiamaScript({ action: "salva", nome, dati: JSON.stringify(dati) });
+      }
+
+      async function elimina(fileId) {
+        return await chiamaScript({ action: "elimina", id: fileId });
+      }
+
+      return { caricaLista, carica, salva, elimina };
+    }
+
+    // ============================================================
+    // COMPONENTE DrivePanel
+    // ============================================================
+    function DrivePanel({ drive, datiDaSalvare, onCarica, nomeFileSuggerito }) {
+      const [lista, setLista]           = useState([]);
+      const [nomeFile, setNomeFile]     = useState(nomeFileSuggerito || "");
+      const [listaVisibile, setListaV]  = useState(false);
+      const [busy, setBusy]             = useState(false);
+      const [msg, setMsg]               = useState(null);
+
+      // Aggiorna il nome suggerito se cambia dall'esterno
+      useEffect(() => { setNomeFile(nomeFileSuggerito || ""); }, [nomeFileSuggerito]);
+
+      function mostra(testo, tipo = "ok") {
+        setMsg({ testo, tipo });
+        setTimeout(() => setMsg(null), 4000);
+      }
+
+      async function aggiornaLista() {
+        try {
+          setBusy(true);
+          const files = await drive.caricaLista();
+          setLista(files);
+        } catch (e) {
+          mostra("Errore lista: " + e.message, "errore");
+        } finally {
+          setBusy(false);
+        }
+      }
+
+      async function handleApriLista() {
+        const nuovoStato = !listaVisibile;
+        setListaV(nuovoStato);
+        if (nuovoStato && lista.length === 0) await aggiornaLista();
+      }
+
+      async function handleSalva() {
+        if (!nomeFile.trim()) { mostra("Inserisci un nome", "errore"); return; }
+        setBusy(true);
+        try {
+          const ris = await drive.salva(datiDaSalvare, nomeFile.trim());
+          mostra(ris.azione === "creato" ? `✅ Salvato: ${ris.nome}` : `✅ Aggiornato: ${ris.nome}`);
+          // Aggiorna lista se era aperta
+          if (listaVisibile) await aggiornaLista();
+        } catch (e) {
+          mostra("❌ " + e.message, "errore");
+        } finally {
+          setBusy(false);
+        }
+      }
+
+      async function handleCarica(file) {
+        setBusy(true);
+        try {
+          const dati = await drive.carica(file.id);
+          onCarica(dati);
+          mostra(`📂 Caricato: ${file.name.replace(".json", "")}`);
+          setListaV(false);
+        } catch (e) {
+          mostra("❌ " + e.message, "errore");
+        } finally {
+          setBusy(false);
+        }
+      }
+
+      async function handleElimina(file, e) {
+        e.stopPropagation();
+        if (!window.confirm(`Eliminare "${file.name.replace(".json", "")}"?`)) return;
+        try {
+          await drive.elimina(file.id);
+          mostra(`🗑️ Eliminato`);
+          await aggiornaLista();
+        } catch (e) {
+          mostra("❌ " + e.message, "errore");
+        }
+      }
+
+      const btnBase = {
+        borderRadius: "8px", fontSize: "12px", fontWeight: 600,
+        border: "none", cursor: busy ? "not-allowed" : "pointer",
+        opacity: busy ? 0.6 : 1, display: "flex", alignItems: "center",
+        justifyContent: "center", gap: "4px",
+      };
+
+      return (
+        <div style={{ ...PANEL_STYLE, borderRadius: "12px", padding: "14px", marginBottom: "10px" }}>
+          <h3 style={{ fontSize: "13px", fontWeight: 600, color: "#cbd5e1", marginBottom: "10px" }}>
+            🗂️ Drive
+          </h3>
+
+          {/* Riga nome file + salva */}
+          <div style={{ display: "flex", gap: "5px", marginBottom: "6px" }}>
+            <input
+              value={nomeFile}
+              onChange={e => setNomeFile(e.target.value)}
+              onKeyDown={e => e.key === "Enter" && handleSalva()}
+              placeholder="Nome configurazione"
+              style={{
+                flex: 1, minWidth: 0, padding: "6px 8px", borderRadius: "6px",
+                fontSize: "11px", color: "#fff", background: "#0f172a",
+                border: "1.5px solid #334155", outline: "none",
+              }}
+            />
+            <button
+              onClick={handleSalva}
+              disabled={busy}
+              style={{ ...btnBase, padding: "6px 10px", background: "#0d9488", color: "#fff", whiteSpace: "nowrap" }}
+              title="Salva su Drive"
+            >
+              💾
+            </button>
+          </div>
+
+          {/* Bottone apri/chiudi lista */}
+          <button
+            onClick={handleApriLista}
+            disabled={busy}
+            style={{ ...btnBase, width: "100%", padding: "7px", background: "#0f172a", color: "#94a3b8", border: "1px solid #334155" }}
+          >
+            {busy ? "⏳ Caricamento…" : (listaVisibile ? "▲ Chiudi lista" : "📋 Carica da Drive")}
+          </button>
+
+          {/* Lista file */}
+          {listaVisibile && (
+            <div style={{ marginTop: "8px" }}>
+              {lista.length === 0 ? (
+                <p style={{ fontSize: "11px", color: "#64748b", textAlign: "center", padding: "8px 0" }}>
+                  Nessun file salvato
+                </p>
+              ) : (
+                <div style={{ maxHeight: "180px", overflowY: "auto", display: "flex", flexDirection: "column", gap: "3px" }}>
+                  {lista.map(f => {
+                    const data = new Date(f.modifiedTime).toLocaleDateString("it-IT", {
+                      day: "2-digit", month: "2-digit", year: "2-digit",
+                      hour: "2-digit", minute: "2-digit"
+                    });
+                    return (
+                      <div
+                        key={f.id}
+                        onClick={() => handleCarica(f)}
+                        style={{
+                          display: "flex", alignItems: "center", gap: "6px",
+                          padding: "6px 8px", borderRadius: "6px", cursor: "pointer",
+                          background: "#0f172a", border: "1px solid #334155",
+                          transition: "border-color .12s",
+                        }}
+                        onMouseEnter={e => e.currentTarget.style.borderColor = "#0d9488"}
+                        onMouseLeave={e => e.currentTarget.style.borderColor = "#334155"}
+                      >
+                        <span style={{ fontSize: "12px" }}>📄</span>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ fontSize: "11px", fontWeight: 600, color: "#e2e8f0", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                            {f.name.replace(".json", "")}
+                          </div>
+                          <div style={{ fontSize: "10px", color: "#64748b" }}>{data}</div>
+                        </div>
+                        <button
+                          onClick={e => handleElimina(f, e)}
+                          style={{ background: "none", border: "none", color: "#ef4444", cursor: "pointer", fontSize: "13px", padding: "2px 3px", borderRadius: "4px", lineHeight: 1 }}
+                          title="Elimina"
+                        >🗑</button>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+              <button
+                onClick={aggiornaLista}
+                disabled={busy}
+                style={{ ...btnBase, width: "100%", marginTop: "6px", padding: "5px", background: "#0f172a", color: "#64748b", border: "1px solid #334155", fontSize: "11px" }}
+              >
+                🔄 Aggiorna
+              </button>
+            </div>
+          )}
+
+          {/* Messaggio feedback */}
+          {msg && (
+            <div style={{
+              marginTop: "8px", padding: "7px 10px", borderRadius: "6px", fontSize: "11px",
+              background: msg.tipo === "ok" ? "#0d3321" : "#3b0c0c",
+              color: msg.tipo === "ok" ? "#6ee7b7" : "#fca5a5",
+              border: `1px solid ${msg.tipo === "ok" ? "#065f46" : "#7f1d1d"}`,
+            }}>
+              {msg.testo}
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    // ============================================================
     // Header
     // ============================================================
     function Header({ onBack, backLabel, title, badge, badgeOk }) {
@@ -124,13 +353,10 @@
       return (
         <div style={{ position: "fixed", inset: 0, zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center" }}
           onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
-          {/* Backdrop */}
           <div style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,0.7)", backdropFilter: "blur(4px)" }} />
-          {/* Modal */}
           <div style={{ position: "relative", width: "90%", maxWidth: "820px", maxHeight: "90vh", background: "#1e293b",
             borderRadius: "16px", border: "1px solid #334155", boxShadow: "0 25px 60px rgba(0,0,0,0.5)",
             display: "flex", flexDirection: "column", overflow: "hidden" }}>
-            {/* Header modale */}
             <div style={{ padding: "16px 20px", display: "flex", alignItems: "center", justifyContent: "space-between",
               borderBottom: "1px solid #334155", flexShrink: 0 }}>
               <h2 style={{ fontSize: "18px", fontWeight: 700, color: "#fff" }}>📖 Guida all'uso</h2>
@@ -138,18 +364,13 @@
                 width: "32px", height: "32px", display: "flex", alignItems: "center", justifyContent: "center",
                 color: "#94a3b8", fontSize: "16px", cursor: "pointer" }}>✕</button>
             </div>
-            {/* Contenuto scrollabile */}
             <div style={{ flex: 1, overflowY: "auto", padding: "24px" }}>
-
-              {/* Intro */}
               <div style={sectionStyle}>
                 <h2 style={h2Style}>👋 Benvenuto in Piantina Classe</h2>
                 <p style={pStyle}>
                   Questa applicazione ti permette di creare la piantina della tua classe, assegnare gli alunni ai banchi e stampare il risultato in PDF. Funziona interamente nel browser, non serve installare nulla e i dati restano nel tuo computer.
                 </p>
               </div>
-
-              {/* Fase 1 */}
               <div style={sectionStyle}>
                 <h2 style={h2Style}>📋 Fase 1 — Configura la classe</h2>
                 <p style={pStyle}>
@@ -159,14 +380,9 @@
                   Clicca <strong style={{ color: "#f59e0b" }}>"Continua → Posiziona i banchi"</strong> per procedere.
                 </p>
               </div>
-
-              {/* Fase 2 */}
               <div style={sectionStyle}>
                 <h2 style={h2Style}>📐 Fase 2 — Posiziona i banchi</h2>
-                <p style={pStyle}>
-                  In questa schermata vedrai una griglia che rappresenta l'aula. Sulla sinistra trovi due pannelli:
-                </p>
-
+                <p style={pStyle}>In questa schermata vedrai una griglia che rappresenta l'aula. Sulla sinistra trovi due pannelli:</p>
                 <h3 style={h3Style}>⚡ Pannello Azioni</h3>
                 <p style={pStyle}>Tre modalità di lavoro:</p>
                 <div style={{ paddingLeft: "16px" }}>
@@ -174,39 +390,28 @@
                   <p style={liStyle}><strong style={{ color: "#2dd4bf" }}>✋ Sposta</strong> — Clicca su un banco già posizionato e trascinalo nella nuova posizione.</p>
                   <p style={liStyle}><strong style={{ color: "#f87171" }}>🗑 Cancella</strong> — Clicca su un banco per rimuoverlo dalla griglia.</p>
                 </div>
-
                 <h3 style={h3Style}>🧰 Pannello Elemento</h3>
                 <p style={pStyle}>
                   Scegli cosa posizionare: la <strong style={{ color: "#a78bfa" }}>Cattedra</strong> (una sola, occupa 3 celle) oppure i <strong style={{ color: "#38bdf8" }}>banchi</strong> (singolo = 1 posto, doppio = 2, triplo = 3). I banchi si disabilitano automaticamente quando non ci sono più posti disponibili.
                 </p>
-
                 <div style={tipStyle}>
                   <p style={tipText}>
                     💡 <strong>Trucco veloce:</strong> In modalità Aggiungi, se clicchi su un banco già posizionato dello <em>stesso tipo</em> lo rimuovi; se clicchi con un tipo <em>diverso</em> selezionato, lo sostituisci.
                   </p>
                 </div>
-
                 <p style={pStyle}>
                   Il contatore in alto a destra mostra i posti posizionati rispetto al numero di alunni. Quando hai posizionato abbastanza posti e la cattedra, apparirà il pulsante per continuare.
                 </p>
               </div>
-
-              {/* Fase 3 */}
               <div style={sectionStyle}>
                 <h2 style={h2Style}>👥 Fase 3 — Assegna gli alunni</h2>
-                <p style={pStyle}>
-                  In questa schermata vedi la piantina al centro e sulla sinistra i pannelli per gestire gli alunni.
-                </p>
-
+                <p style={pStyle}>In questa schermata vedi la piantina al centro e sulla sinistra i pannelli per gestire gli alunni.</p>
                 <h3 style={h3Style}>✏️ Inserimento alunni</h3>
-                <p style={pStyle}>
-                  Puoi aggiungere gli alunni in due modi:
-                </p>
+                <p style={pStyle}>Puoi aggiungere gli alunni in due modi:</p>
                 <div style={{ paddingLeft: "16px" }}>
                   <p style={liStyle}><strong>Manualmente:</strong> scrivi cognome e nome, poi clicca "Aggiungi" o premi <span style={kbdStyle}>Invio</span>. I nomi vengono formattati automaticamente.</p>
                   <p style={liStyle}><strong>Da file:</strong> clicca "📄 Scegli file" e importa un file CSV o Excel (.xlsx). Il file deve avere le colonne Cognome e Nome (l'header viene riconosciuto automaticamente).</p>
                 </div>
-
                 <h3 style={h3Style}>🎲 Assegnazione ai banchi</h3>
                 <p style={pStyle}>Hai diverse opzioni per assegnare gli alunni:</p>
                 <div style={{ paddingLeft: "16px" }}>
@@ -214,77 +419,65 @@
                   <p style={liStyle}><strong style={{ color: "#2dd4bf" }}>🎲 Assegna non assegnati:</strong> posiziona casualmente tutti gli alunni ancora in lista nei posti liberi.</p>
                   <p style={liStyle}><strong style={{ color: "#a78bfa" }}>🔀 Mescola sbloccati:</strong> scambia casualmente le posizioni degli alunni già assegnati che non sono bloccati.</p>
                 </div>
-
                 <h3 style={h3Style}>Gestire i banchi assegnati</h3>
-                <p style={pStyle}>
-                  Su ogni banco con un alunno assegnato appaiono due pulsantini:
-                </p>
+                <p style={pStyle}>Su ogni banco con un alunno assegnato appaiono due pulsantini:</p>
                 <div style={{ paddingLeft: "16px" }}>
                   <p style={liStyle}><span style={{ background: "rgba(239,68,68,0.8)", color: "#fff", padding: "1px 6px", borderRadius: "4px", fontSize: "12px" }}>✕</span> in alto a sinistra — rimuove l'alunno dal banco e lo rimette nella lista.</p>
-                  <p style={liStyle}><span style={{ background: "rgba(100,116,139,0.5)", color: "#fff", padding: "1px 6px", borderRadius: "4px", fontSize: "12px" }}>🔓</span> / <span style={{ background: "rgba(251,191,36,0.9)", color: "#fff", padding: "1px 6px", borderRadius: "4px", fontSize: "12px" }}>🔒</span> in alto a destra — blocca/sblocca la posizione. Un alunno bloccato non viene spostato dalla randomizzazione.</p>
+                  <p style={liStyle}><span style={{ background: "rgba(100,116,139,0.5)", color: "#fff", padding: "1px 6px", borderRadius: "4px", fontSize: "12px" }}>🔓</span> / <span style={{ background: "rgba(251,191,36,0.9)", color: "#fff", padding: "1px 6px", borderRadius: "4px", fontSize: "12px" }}>🔒</span> in alto a destra — blocca/sblocca la posizione.</p>
                 </div>
-
                 <div style={tipStyle}>
                   <p style={tipText}>
-                    💡 <strong>Strategia consigliata:</strong> Usa "Assegna non assegnati" per il primo posizionamento. Poi blocca gli alunni che ti convincono e usa "Mescola sbloccati" per rimescolare solo gli altri, finché la disposizione ti soddisfa.
+                    💡 <strong>Strategia consigliata:</strong> Usa "Assegna non assegnati" per il primo posizionamento. Poi blocca gli alunni che ti convincono e usa "Mescola sbloccati" per rimescolare solo gli altri.
                   </p>
                 </div>
               </div>
-
-              {/* PDF */}
+              <div style={sectionStyle}>
+                <h2 style={h2Style}>🗂️ Salvataggio su Drive</h2>
+                <p style={pStyle}>
+                  Nel pannello sinistro della schermata "Assegna Posti" trovi il pannello <strong style={{ color: "#f59e0b" }}>Drive</strong>. Permette di salvare e caricare le configurazioni complete (layout banchi + alunni + assegnazioni) su Google Drive, condivise tra tutti i colleghi.
+                </p>
+                <div style={{ paddingLeft: "16px" }}>
+                  <p style={liStyle}><strong>Salva:</strong> scrivi un nome (es. "3A-Italiano") e clicca 💾. Se il file esiste già viene aggiornato.</p>
+                  <p style={liStyle}><strong>Carica:</strong> clicca "📋 Carica da Drive", si apre la lista dei file salvati. Clicca su un file per caricarlo — la piantina verrà ripristinata completamente.</p>
+                  <p style={liStyle}><strong>Elimina:</strong> usa l'icona 🗑 accanto al file nella lista.</p>
+                </div>
+                <div style={tipStyle}>
+                  <p style={tipText}>
+                    💡 Devi essere loggato con la mail scolastica per accedere al Drive. Se ottieni un errore, controlla di essere autenticato con l'account @docenti.ipsgiordani.it.
+                  </p>
+                </div>
+              </div>
               <div style={sectionStyle}>
                 <h2 style={h2Style}>📄 Esportazione PDF</h2>
                 <p style={pStyle}>
-                  Quando almeno un alunno è assegnato, in fondo alla colonna sinistra appare il pulsante <strong style={{ color: "#f59e0b" }}>"📄 Scarica PDF"</strong>. Il PDF viene generato in formato A4 orizzontale con:
-                </p>
-                <div style={{ paddingLeft: "16px" }}>
-                  <p style={liStyle}>Intestazione con classe, sezione, indirizzo e anno scolastico</p>
-                  <p style={liStyle}>Piantina con cattedra e banchi con i nomi degli alunni</p>
-                  <p style={liStyle}>Data di generazione nel footer</p>
-                </div>
-                <p style={pStyle}>
-                  Il PDF è pronto per essere stampato su foglio A4 orizzontale. Le icone di blocco e i pulsanti non appaiono nel PDF.
+                  Quando almeno un alunno è assegnato, in fondo alla colonna sinistra appare il pulsante <strong style={{ color: "#f59e0b" }}>"📄 Scarica PDF"</strong>. Il PDF viene generato in formato A4 orizzontale con intestazione, piantina e data.
                 </p>
               </div>
-
-              {/* File import */}
               <div style={sectionStyle}>
                 <h2 style={h2Style}>📂 Formato file per l'importazione</h2>
-                <p style={pStyle}>
-                  L'applicazione accetta file <strong>CSV</strong>, <strong>TXT</strong>, <strong>XLS</strong> e <strong>XLSX</strong>. Il file deve contenere i dati degli alunni con questa struttura:
-                </p>
+                <p style={pStyle}>L'applicazione accetta file <strong>CSV</strong>, <strong>TXT</strong>, <strong>XLS</strong> e <strong>XLSX</strong>.</p>
                 <div style={{ background: "#0f172a", borderRadius: "8px", padding: "16px", marginTop: "8px", fontFamily: "monospace", fontSize: "13px", color: "#94a3b8", lineHeight: 1.8, overflowX: "auto" }}>
                   <div style={{ color: "#64748b" }}>// Formato consigliato (con header):</div>
                   <div><span style={{ color: "#f59e0b" }}>Cognome</span>,<span style={{ color: "#38bdf8" }}>Nome</span></div>
                   <div>Rossi,Mario</div>
                   <div>Bianchi,Giulia</div>
-                  <div>Verdi,Luca</div>
-                  <div style={{ marginTop: "12px", color: "#64748b" }}>// Funziona anche senza header</div>
-                  <div style={{ color: "#64748b" }}>// e con una sola colonna (cognome)</div>
                 </div>
-                <p style={{ ...pStyle, marginTop: "8px" }}>
-                  L'header viene riconosciuto automaticamente. Se la prima colonna si chiama "Nome" o "Name", l'ordine delle colonne viene invertito. I duplicati e i nomi oltre il limite vengono saltati automaticamente.
-                </p>
               </div>
-
-              {/* Note */}
               <div style={sectionStyle}>
                 <h2 style={h2Style}>ℹ️ Note importanti</h2>
                 <div style={{ paddingLeft: "16px" }}>
-                  <p style={liStyle}>I dati restano nel tuo browser e non vengono inviati a nessun server.</p>
-                  <p style={liStyle}>Se ricarichi la pagina, i dati vengono persi. Ricorda di esportare il PDF prima di chiudere.</p>
+                  <p style={liStyle}>I dati in memoria vengono persi se ricarichi la pagina — usa Drive per salvarli.</p>
                   <p style={liStyle}>L'applicazione funziona su qualsiasi browser moderno (Chrome, Firefox, Edge, Safari).</p>
                   <p style={liStyle}>Per risultati ottimali, usa un computer con schermo di almeno 13 pollici.</p>
                 </div>
               </div>
-
               <div style={{ borderTop: "1px solid #334155", paddingTop: "16px", textAlign: "center" }}>
                 <button onClick={onClose} style={{ padding: "10px 28px", borderRadius: "12px", fontWeight: 600, fontSize: "14px",
                   background: "linear-gradient(135deg, #f59e0b, #d97706)", color: "#fff", border: "none", cursor: "pointer",
                   boxShadow: "0 4px 14px rgba(245,158,11,0.4)" }}>
                   Chiudi guida
                 </button>
-                <p style={{ fontSize: "12px", color: "#64748b", marginTop: "16px" }}>Piantina Classe v1.0</p>
+                <p style={{ fontSize: "12px", color: "#64748b", marginTop: "16px" }}>Piantina Classe v1.1</p>
               </div>
             </div>
           </div>
@@ -300,15 +493,12 @@
       const [errors, setErrors] = useState({});
       
       const handleChange = (field, value) => { setFormData((p) => ({ ...p, [field]: value })); if (errors[field]) setErrors((p) => ({ ...p, [field]: null })); };
-      
       const validate = () => {
         const e = {}; if (!formData.indirizzo.trim()) e.indirizzo = "Inserisci l'indirizzo";
         if (formData.numAlunni < 1 || formData.numAlunni > MAX_STUDENTI) e.numAlunni = `Tra 1 e ${MAX_STUDENTI}`;
         setErrors(e); return Object.keys(e).length === 0;
       };
-      
       const handleSubmit = () => { if (validate()) onComplete(formData); };
-      
       const iStyle = (err) => ({ width: "100%", padding: "10px 12px", borderRadius: "8px", fontSize: "14px", color: "#1e293b", background: "#f8fafc", border: `1.5px solid ${err ? "#ef4444" : "#cbd5e1"}`, outline: "none" });
 
       return (
@@ -367,8 +557,6 @@
                 Continua → Posiziona i banchi
               </button>
             </div>
-
-            {/* Pulsante Guida */}
             <div style={{ textAlign: "center", marginTop: "20px" }}>
               <button onClick={onGuida} style={{ background: "none", border: "1px solid #475569", borderRadius: "10px",
                 padding: "8px 20px", color: "#94a3b8", fontSize: "13px", cursor: "pointer", display: "inline-flex", alignItems: "center", gap: "6px" }}>
@@ -381,7 +569,7 @@
     }
 
     // ============================================================
-    // EditorPiantina (invariato dal codice dell'utente)
+    // EditorPiantina
     // ============================================================
     function EditorPiantina({ datiClasse, onBack, onComplete }) {
       const [desks, setDesks] = useState([]);
@@ -486,16 +674,46 @@
     }
 
     // ============================================================
-    // AssegnaPosti (invariato dal codice dell'utente)
+    // AssegnaPosti
     // ============================================================
-    function AssegnaPosti({ datiClasse, desks, onBack }) {
-      const [alunni, setAlunni] = useState([]); const [assegnazioni, setAssegnazioni] = useState({});
+    function AssegnaPosti({ datiClasse, desks, onBack, onCaricaDaDrive }) {
+      const [alunni, setAlunni] = useState([]);
+      const [assegnazioni, setAssegnazioni] = useState({});
       const [nome, setNome] = useState(""); const [cognome, setCognome] = useState(""); const [error, setError] = useState(""); const [importMsg, setImportMsg] = useState("");
       const fileInputRef = useRef(null); const [draggingAlunno, setDraggingAlunno] = useState(null);
       const gridContainerRef = useRef(null);
       const { w: cellW, h: cellH } = useCellDimensions(gridContainerRef);
       const [exporting, setExporting] = useState(false);
+
+      const drive = useDriveSync();
+
       const formattaTesto = (str) => { if (!str) return ""; return str.trim().toLowerCase().replace(/(?:^|[\s'])([a-zàèéìòù])/g, match => match.toUpperCase()); };
+
+      // Nome file suggerito automaticamente
+      const nomeFileSuggerito = useMemo(() => {
+        if (!datiClasse) return "";
+        const ind = datiClasse.indirizzo ? `-${datiClasse.indirizzo.substring(0, 15).replace(/\s+/g, "")}` : "";
+        return `${datiClasse.classe}${datiClasse.sezione}${ind}-${datiClasse.annoScolastico.replace("/", "_")}`;
+      }, [datiClasse]);
+
+      // Dati completi da salvare su Drive
+      const datiDaSalvare = useMemo(() => ({
+        datiClasse,
+        desks,
+        alunni,
+        assegnazioni,
+      }), [datiClasse, desks, alunni, assegnazioni]);
+
+      // Quando si carica da Drive, ripristina alunni e assegnazioni locali
+      // oppure segnala all'app di cambiare fase se serve
+      function handleCaricaDaDrive(dati) {
+        if (dati.alunni) setAlunni(dati.alunni);
+        if (dati.assegnazioni) setAssegnazioni(dati.assegnazioni);
+        // Se il file caricato ha datiClasse o desks diversi, delega all'App
+        if (onCaricaDaDrive && (dati.datiClasse || dati.desks)) {
+          onCaricaDaDrive(dati);
+        }
+      }
 
       const exportPDF = async () => {
         setExporting(true);
@@ -580,7 +798,7 @@
 
       const occupiedMap = useMemo(() => { const map = {}; desks.forEach((d) => { const t = TOOLS[d.type]; for (let c = 0; c < t.width; c++) for (let r = 0; r < t.height; r++) map[`${d.row+r},${d.col+c}`] = d.id; }); return map; }, [desks]);
       const getAlunno = (id) => alunni.find((a) => a.id === id);
-      const totAssegnati = Object.keys(assegnazioni).length; const totBloccati = Object.values(assegnazioni).filter((a) => a.locked).length; const numSbloccati = Object.entries(assegnazioni).filter(([, v]) => !v.locked).length;
+      const totAssegnati = Object.keys(assegnazioni).length; const numSbloccati = Object.entries(assegnazioni).filter(([, v]) => !v.locked).length;
       const panelBtn = (bg, col, dis) => ({ width: "100%", marginBottom: "6px", padding: "7px", borderRadius: "8px", fontSize: "12px", fontWeight: 600, background: dis ? "#1a1a2e" : bg, color: dis ? "#475569" : col, border: "none", cursor: dis ? "not-allowed" : "pointer" });
 
       return (
@@ -588,6 +806,15 @@
           <Header onBack={onBack} backLabel="Editor" title={`👥 Assegna Posti — ${datiClasse.classe}ª ${datiClasse.sezione}`} badge={`${totAssegnati}/${alunni.length} assegnati`} badgeOk={totAssegnati === alunni.length && alunni.length > 0} />
           <div style={{ display: "flex", gap: "16px", padding: "16px", flex: 1, overflow: "hidden" }}>
             <div style={{ width: "250px", flexShrink: 0, overflowY: "auto" }}>
+
+              {/* ── Pannello Drive ── */}
+              <DrivePanel
+                drive={drive}
+                datiDaSalvare={datiDaSalvare}
+                onCarica={handleCaricaDaDrive}
+                nomeFileSuggerito={nomeFileSuggerito}
+              />
+
               <div style={{ ...PANEL_STYLE, borderRadius: "12px", padding: "14px", marginBottom: "10px" }}>
                 <h3 style={{ fontSize: "13px", fontWeight: 600, color: "#cbd5e1", marginBottom: "8px" }}>✏️ Aggiungi alunno</h3>
                 <input type="text" value={cognome} onChange={(e) => { setCognome(e.target.value); setError(""); }} onKeyDown={(e) => e.key === "Enter" && addAlunno()} placeholder="Cognome *" style={{ width: "100%", padding: "6px 8px", borderRadius: "6px", fontSize: "12px", color: "#fff", marginBottom: "6px", background: "#0f172a", border: "1.5px solid #334155", outline: "none" }} />
@@ -673,11 +900,27 @@
       const [datiClasse, setDatiClasse] = useState(null);
       const [pianta, setPianta] = useState(null);
       const [showGuida, setShowGuida] = useState(false);
+
+      // Gestisce il caricamento completo da Drive (cambia fase se necessario)
+      function handleCaricaDaDrive(dati) {
+        if (dati.datiClasse) setDatiClasse(dati.datiClasse);
+        if (dati.desks) setPianta(dati.desks);
+        // Porta l'app alla fase assegna se non ci siamo già
+        if (dati.datiClasse && dati.desks) setFase("assegna");
+      }
+
       return (
         <div style={{ display: "flex", flexDirection: "column", minHeight: "100vh" }}>
           {fase === "setup" && <SetupClasse onComplete={(d) => { setDatiClasse(d); setFase("editor"); }} onGuida={() => setShowGuida(true)} />}
           {fase === "editor" && <EditorPiantina datiClasse={datiClasse} onBack={() => setFase("setup")} onComplete={(d) => { setPianta(d); setFase("assegna"); }} />}
-          {fase === "assegna" && <AssegnaPosti datiClasse={datiClasse} desks={pianta} onBack={() => setFase("editor")} />}
+          {fase === "assegna" && (
+            <AssegnaPosti
+              datiClasse={datiClasse}
+              desks={pianta}
+              onBack={() => setFase("editor")}
+              onCaricaDaDrive={handleCaricaDaDrive}
+            />
+          )}
           {showGuida && <Guida onClose={() => setShowGuida(false)} />}
         </div>
       );
