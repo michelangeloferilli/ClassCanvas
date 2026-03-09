@@ -557,6 +557,11 @@
                 Continua → Posiziona i banchi
               </button>
             </div>
+            {/* Drive nella schermata Setup (solo org) */}
+            {isOrgUser && (
+              <DrivePanelSetup drive={drive} onCaricaDaDrive={onCaricaDaDrive} />
+            )}
+
             <div style={{ textAlign: "center", marginTop: "20px" }}>
               <button onClick={onGuida} style={{ background: "none", border: "1px solid #475569", borderRadius: "10px",
                 padding: "8px 20px", color: "#94a3b8", fontSize: "13px", cursor: "pointer", display: "inline-flex", alignItems: "center", gap: "6px" }}>
@@ -685,8 +690,6 @@
       const { w: cellW, h: cellH } = useCellDimensions(gridContainerRef);
       const [exporting, setExporting] = useState(false);
 
-      const drive = useDriveSync();
-
       const formattaTesto = (str) => { if (!str) return ""; return str.trim().toLowerCase().replace(/(?:^|[\s'])([a-zàèéìòù])/g, match => match.toUpperCase()); };
 
       // Nome file suggerito automaticamente
@@ -807,13 +810,15 @@
           <div style={{ display: "flex", gap: "16px", padding: "16px", flex: 1, overflow: "hidden" }}>
             <div style={{ width: "250px", flexShrink: 0, overflowY: "auto" }}>
 
-              {/* ── Pannello Drive ── */}
-              <DrivePanel
-                drive={drive}
-                datiDaSalvare={datiDaSalvare}
-                onCarica={handleCaricaDaDrive}
-                nomeFileSuggerito={nomeFileSuggerito}
-              />
+              {/* ── Pannello Drive (solo org) ── */}
+              {isOrgUser && (
+                <DrivePanel
+                  drive={drive}
+                  datiDaSalvare={datiDaSalvare}
+                  onCarica={handleCaricaDaDrive}
+                  nomeFileSuggerito={nomeFileSuggerito}
+                />
+              )}
 
               <div style={{ ...PANEL_STYLE, borderRadius: "12px", padding: "14px", marginBottom: "10px" }}>
                 <h3 style={{ fontSize: "13px", fontWeight: 600, color: "#cbd5e1", marginBottom: "8px" }}>✏️ Aggiungi alunno</h3>
@@ -893,32 +898,149 @@
     }
 
     // ============================================================
+    // DrivePanelSetup — pannello di caricamento nella schermata Setup
+    // ============================================================
+    function DrivePanelSetup({ drive, onCaricaDaDrive }) {
+      const [lista, setLista]   = useState([]);
+      const [aperto, setAperto] = useState(false);
+      const [busy, setBusy]     = useState(false);
+      const [msg, setMsg]       = useState(null);
+
+      function mostra(testo, tipo = "ok") {
+        setMsg({ testo, tipo });
+        setTimeout(() => setMsg(null), 4000);
+      }
+
+      async function handleApri() {
+        const nuovoStato = !aperto;
+        setAperto(nuovoStato);
+        if (nuovoStato && lista.length === 0) {
+          setBusy(true);
+          try { setLista(await drive.caricaLista()); }
+          catch (e) { mostra("Errore: " + e.message, "errore"); }
+          finally { setBusy(false); }
+        }
+      }
+
+      async function handleCarica(file) {
+        setBusy(true);
+        try {
+          const dati = await drive.carica(file.id);
+          onCaricaDaDrive(dati);
+        } catch (e) {
+          mostra("Errore caricamento: " + e.message, "errore");
+          setBusy(false);
+        }
+      }
+
+      return (
+        <div style={{ marginTop: "16px" }}>
+          <button
+            onClick={handleApri}
+            disabled={busy}
+            style={{ width: "100%", padding: "10px", borderRadius: "12px", fontSize: "13px",
+              fontWeight: 600, border: "1px solid #475569", background: aperto ? "#334155" : "none",
+              color: "#94a3b8", cursor: "pointer", display: "flex", alignItems: "center",
+              justifyContent: "center", gap: "8px" }}
+          >
+            {busy ? "⏳ Caricamento…" : (aperto ? "▲ Chiudi" : "🗂️ Carica configurazione da Drive")}
+          </button>
+
+          {aperto && (
+            <div style={{ marginTop: "8px", background: "#1e293b", border: "1px solid #334155",
+              borderRadius: "12px", padding: "12px" }}>
+              {lista.length === 0 && !busy ? (
+                <p style={{ fontSize: "12px", color: "#64748b", textAlign: "center" }}>Nessun file salvato</p>
+              ) : (
+                <div style={{ display: "flex", flexDirection: "column", gap: "4px", maxHeight: "200px", overflowY: "auto" }}>
+                  {lista.map(f => {
+                    const data = new Date(f.modifiedTime).toLocaleDateString("it-IT", { day: "2-digit", month: "2-digit", year: "2-digit" });
+                    return (
+                      <button
+                        key={f.id}
+                        onClick={() => handleCarica(f)}
+                        disabled={busy}
+                        style={{ display: "flex", alignItems: "center", gap: "8px", padding: "8px 10px",
+                          borderRadius: "8px", border: "1px solid #334155", background: "#0f172a",
+                          color: "#e2e8f0", cursor: "pointer", textAlign: "left", fontSize: "13px",
+                          width: "100%" }}
+                        onMouseEnter={e => e.currentTarget.style.borderColor = "#f59e0b"}
+                        onMouseLeave={e => e.currentTarget.style.borderColor = "#334155"}
+                      >
+                        <span>📄</span>
+                        <span style={{ flex: 1, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                          {f.name.replace(".json", "")}
+                        </span>
+                        <span style={{ fontSize: "11px", color: "#64748b", whiteSpace: "nowrap" }}>{data}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+              {msg && (
+                <div style={{ marginTop: "8px", padding: "7px", borderRadius: "6px", fontSize: "12px",
+                  background: msg.tipo === "ok" ? "#0d3321" : "#3b0c0c",
+                  color: msg.tipo === "ok" ? "#6ee7b7" : "#fca5a5" }}>
+                  {msg.testo}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    // ============================================================
     // App
     // ============================================================
     function App() {
-      const [fase, setFase] = useState("setup");
+      const [fase, setFase]             = useState("setup");
       const [datiClasse, setDatiClasse] = useState(null);
-      const [pianta, setPianta] = useState(null);
-      const [showGuida, setShowGuida] = useState(false);
+      const [pianta, setPianta]         = useState(null);
+      const [showGuida, setShowGuida]   = useState(false);
+      const [isOrgUser, setIsOrgUser]   = useState(false);
 
-      // Gestisce il caricamento completo da Drive (cambia fase se necessario)
+      // Drive istanziato a livello App e condiviso tra tutte le fasi
+      const drive = useDriveSync();
+
+      // Verifica se l'utente è dell'organizzazione al primo caricamento
+      useEffect(() => {
+        drive.verificaAccesso().then(ok => setIsOrgUser(ok));
+      }, []);
+
+      // Caricamento completo da Drive — funziona da qualsiasi fase
       function handleCaricaDaDrive(dati) {
         if (dati.datiClasse) setDatiClasse(dati.datiClasse);
         if (dati.desks) setPianta(dati.desks);
-        // Porta l'app alla fase assegna se non ci siamo già
         if (dati.datiClasse && dati.desks) setFase("assegna");
       }
 
       return (
         <div style={{ display: "flex", flexDirection: "column", minHeight: "100vh" }}>
-          {fase === "setup" && <SetupClasse onComplete={(d) => { setDatiClasse(d); setFase("editor"); }} onGuida={() => setShowGuida(true)} />}
-          {fase === "editor" && <EditorPiantina datiClasse={datiClasse} onBack={() => setFase("setup")} onComplete={(d) => { setPianta(d); setFase("assegna"); }} />}
+          {fase === "setup" && (
+            <SetupClasse
+              onComplete={(d) => { setDatiClasse(d); setFase("editor"); }}
+              onGuida={() => setShowGuida(true)}
+              isOrgUser={isOrgUser}
+              drive={drive}
+              onCaricaDaDrive={handleCaricaDaDrive}
+            />
+          )}
+          {fase === "editor" && (
+            <EditorPiantina
+              datiClasse={datiClasse}
+              onBack={() => setFase("setup")}
+              onComplete={(d) => { setPianta(d); setFase("assegna"); }}
+            />
+          )}
           {fase === "assegna" && (
             <AssegnaPosti
               datiClasse={datiClasse}
               desks={pianta}
               onBack={() => setFase("editor")}
               onCaricaDaDrive={handleCaricaDaDrive}
+              drive={drive}
+              isOrgUser={isOrgUser}
             />
           )}
           {showGuida && <Guida onClose={() => setShowGuida(false)} />}
