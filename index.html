@@ -456,7 +456,6 @@
           const footer = document.createElement("div");
           footer.style.cssText = "text-align:center;margin-top:20px;border-top:1px solid #e2e8f0;padding-top:10px;";
           footer.innerHTML = `<span style="font-size:10px;color:#94a3b8;">Generata il ${new Date().toLocaleDateString("it-IT")}</span>`;
-          footer.innerHTML += `<br><span style="font-size:9px;color:#cbd5e1;">Applicazione sviluppata da Michelangelo Ferilli — 2026</span>`;
           printDiv.appendChild(footer);
           document.body.appendChild(printDiv);
           const canvas = await html2canvas(printDiv, { scale: 2, useCORS: true, backgroundColor: "#ffffff" });
